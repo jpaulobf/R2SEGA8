@@ -10,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(R2SEGA8_BUILD_GUI "Build the SDL3 / Dear ImGui application" ON)
 
 add_library(r2sega8_core STATIC
+    src/Core/CPU/Z80/Z80.cpp
+    src/Core/CPU/Z80/Z80Clock.cpp
     src/Common/RomFile.cpp
     src/Core/Cartridge/Cartridge.cpp
     src/Systems/System.cpp
@@ -62,13 +64,20 @@ if(R2SEGA8_BUILD_GUI)
     else()
         target_compile_options(r2sega8_window PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_executable(R2SEGA8 src/main.cpp)
+    add_executable(R2SEGA8 src/Emulator.cpp src/Systems/Engine.cpp)
     target_link_libraries(R2SEGA8 PRIVATE r2sega8_window)
     set_target_properties(R2SEGA8 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(z80_tests tests/Core/Z80Tests.cpp)
+    target_link_libraries(z80_tests PRIVATE r2sega8_core)
+    add_test(NAME z80_tests COMMAND z80_tests)
+    add_executable(z80_vectors tests/Core/Z80Vectors.cpp)
+    target_link_libraries(z80_vectors PRIVATE r2sega8_core)
+    add_executable(z80_exerciser tests/Core/Z80Exerciser.cpp)
+    target_link_libraries(z80_exerciser PRIVATE r2sega8_core)
     add_executable(rom_system_tests tests/Systems/RomSystemTests.cpp)
     target_link_libraries(rom_system_tests PRIVATE r2sega8_core)
     add_test(NAME rom_system_tests COMMAND rom_system_tests)
