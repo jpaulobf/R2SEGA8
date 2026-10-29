@@ -60,7 +60,7 @@ namespace R2SEGA8::Window
         state.renderer = SDL_CreateRenderer(state.window, nullptr);
         if (!state.renderer)
             throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderVSync(state.renderer, 1); // A pausa entre quadros também limita o uso da CPU se o VSync não estiver disponível.
+        SDL_SetRenderVSync(state.renderer, 0); // A Engine controla o ritmo; VSync será integrado posteriormente.
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         state.contextReady = true;
@@ -134,12 +134,8 @@ namespace R2SEGA8::Window
         auto &state = *impl_;
         if (!state.rendererReady)
             throw std::logic_error("Open the window before rendering.");
-        const auto start = SDL_GetTicks();
         if (SDL_GetWindowFlags(state.window) & SDL_WINDOW_MINIMIZED)
-        {
-            SDL_Delay(16);
             return;
-        }
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
@@ -182,8 +178,5 @@ namespace R2SEGA8::Window
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), state.renderer);
         if (!SDL_RenderPresent(state.renderer))
             throw std::runtime_error(SDL_GetError());
-        const auto elapsed = SDL_GetTicks() - start;
-        if (elapsed < 16)
-            SDL_Delay(static_cast<Uint32>(16 - elapsed));
     }
 }
