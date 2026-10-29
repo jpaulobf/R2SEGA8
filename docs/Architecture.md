@@ -21,6 +21,7 @@ ainda não estão implementados.
 | `src/Core/Input` | Estado dos dispositivos emulados, sem eventos SDL. |
 | `src/Core/Timing` | Contagem de ciclos e ferramentas de sincronização. |
 | `src/Systems` | Composição de cada máquina, mapas de memória, portas, reset e configuração. |
+| `src/Systems/Board.h` | Contrato da placa emulada, reunindo CPU, cartucho, RAM e barramento. |
 | `src/Systems/Engine.cpp` | Inicialização da aplicação e coordenação de eventos, carregamento, emulação e apresentação. |
 | `src/Emulator.cpp` | Ponto de entrada que instancia `Systems::Engine` e chama `run()`. |
 | `src/Window` | Sessão SDL3 e interface Dear ImGui, incluindo o seletor de arquivos. |
@@ -67,7 +68,7 @@ vazia; outra interface poderá ganhar sua própria pasta quando houver necessida
    e cabeçalho Sega fornecem sugestões; não certificam compatibilidade.
 3. `Window::FileManager` mostra a sugestão e permite escolher o sistema antes
    de carregar. O cabeçalho tem precedência sobre a extensão, com aviso de conflito.
-4. `Systems::createSystem` constrói a classe específica com cartucho e RAM.
+4. `Systems::createBoard` constrói a placa específica com CPU, cartucho e RAM.
    A máquina ativa só é substituída depois que a construção termina com sucesso.
 
 O tamanho do arquivo não define o tamanho do espaço de endereçamento da CPU.
