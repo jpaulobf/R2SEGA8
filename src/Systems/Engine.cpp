@@ -1,11 +1,11 @@
 #include "Engine.h"
 #include "Board.h"
 #include "Window/Window.h"
-#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <exception>
 #include <iostream>
+#include <thread>
 #include <utility>
 
 int R2SEGA8::Systems::Engine::run()
@@ -14,14 +14,14 @@ int R2SEGA8::Systems::Engine::run()
     {
         std::unique_ptr<R2SEGA8::Systems::Board> board;
         using Clock = std::chrono::steady_clock;
-        auto lastTick = Clock::now();
-        double cycleBalance = 0;
+        constexpr unsigned targetFPS = 60;
+        const auto frameDuration = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / targetFPS));
+        std::uint64_t cycleRemainder = 0;
         R2SEGA8::Window::Window window([&](R2SEGA8::Core::Cartridge cartridge, R2SEGA8::Common::SystemType type)
                                        {
             auto next = R2SEGA8::Systems::createBoard(type, std::move(cartridge));
             board = std::move(next);
-            lastTick = Clock::now();
-            cycleBalance = 0;
+            cycleRemainder = 0;
             const auto &loaded = board->cartridge();
             const auto path = loaded.path().u8string();
             std::printf("System: %s\nFile: %s\nROM: %zu bytes | System RAM: %zu bytes\n",
@@ -36,19 +36,23 @@ int R2SEGA8::Systems::Engine::run()
                 std::puts("ROM loaded; system memory mapping is not implemented yet.");
             std::fflush(stdout); });
         window.open();
-        while (window.processEvents())
+        while (true)
         {
-            const auto now = Clock::now();
-            // Descarta pausas longas do hospedeiro para limitar a recuperação e manter a interface responsiva.
-            const auto elapsed = std::min(now - lastTick, std::chrono::duration_cast<Clock::duration>(std::chrono::milliseconds(50)));
-            lastTick = now;
+            const auto frameStart = Clock::now();
+            if (!window.processEvents())
+                break;
             if (board && board->clockFrequency())
             {
-                cycleBalance += std::chrono::duration<double>(elapsed).count() * board->clockFrequency();
-                if (cycleBalance >= 1)
-                    cycleBalance -= static_cast<double>(board->runCycles(static_cast<std::uint64_t>(cycleBalance)));
+                // Orçamento provisório por quadro; preserva a fração sem recuperar quadros atrasados.
+                cycleRemainder += board->clockFrequency();
+                const auto budget = cycleRemainder / targetFPS;
+                cycleRemainder %= targetFPS;
+                if (budget)
+                    board->runCycles(budget);
             }
             window.render(board.get());
+            // Cede a CPU ao sistema operacional até completar o intervalo de 60 FPS.
+            std::this_thread::sleep_until(frameStart + frameDuration);
         }
         return 0;
     }
