@@ -20,3 +20,5 @@
 /bootroms/
 build-linux.sh
 TODO.md
+tests/Core/RunZ80Vectors.py
+docs/Z80.md
