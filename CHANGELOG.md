@@ -4,6 +4,9 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Limite provisório de 60 FPS na `Engine`, com pausa entre quadros e orçamento
+  de CPU por quadro; controle de ritmo removido da janela e VSync desativado por enquanto.
+
 - Classe base das máquinas renomeada de `System` para `Board`, com criação
   pela fábrica `createBoard()` e integração à `Engine`.
 
