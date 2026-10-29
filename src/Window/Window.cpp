@@ -1,5 +1,5 @@
 #include "Window.h"
-#include "Systems/System.h"
+#include "Systems/Board.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -129,7 +129,7 @@ namespace R2SEGA8::Window
         }
     }
 
-    void Window::render(const Systems::System *system)
+    void Window::render(const Systems::Board *board)
     {
         auto &state = *impl_;
         if (!state.rendererReady)
@@ -164,13 +164,13 @@ namespace R2SEGA8::Window
                 }
                 ImGui::EndMenuBar();
             }
-            if (system)
+            if (board)
             {
-                const auto &cartridge = system->cartridge();
+                const auto &cartridge = board->cartridge();
                 drawBytes("Cartridge ROM (file offsets)", cartridge.rom());
-                drawBytes("System RAM (physical offsets)", system->ram());
+                drawBytes("System RAM (physical offsets)", board->ram());
             }
-            // O carregamento pode substituir a máquina ativa. Não acessar system após esta chamada.
+            // O carregamento pode substituir a máquina ativa. Não acessar board após esta chamada.
             state.files.draw();
         }
         ImGui::End();

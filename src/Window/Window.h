@@ -5,7 +5,7 @@
 
 namespace R2SEGA8::Systems
 {
-    class System;
+    class Board;
 }
 
 namespace R2SEGA8::Window
@@ -37,11 +37,11 @@ namespace R2SEGA8::Window
         // Encaminha eventos ao ImGui e trata saída, Ctrl+O e arquivos arrastados.
         // Retorna false quando a saída foi solicitada; exige uma sessão inicializada.
         bool processEvents();
-        
-        // Desenha e apresenta a interface; system pode ser nulo quando não há ROM.
+
+        // Desenha e apresenta a interface; board pode ser nulo quando não há ROM.
         // A função de carregamento pode substituir a máquina após sua exibição.
         // Exige uma sessão inicializada e propaga falhas de renderização SDL3.
-        void render(const Systems::System *system);
+        void render(const Systems::Board *board);
 
     private:
         // Oculta os tipos nativos e centraliza o estado e a liberação dos recursos.
