@@ -14,7 +14,7 @@ add_library(r2sega8_core STATIC
     src/Core/CPU/Z80/Z80Clock.cpp
     src/Common/RomFile.cpp
     src/Core/Cartridge/Cartridge.cpp
-    src/Systems/System.cpp
+    src/Systems/Board.cpp
     src/Systems/SG1000/SG1000.cpp
     src/Systems/SC3000/SC3000.cpp
     src/Systems/MasterSystem/MasterSystem.cpp
