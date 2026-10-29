@@ -1,5 +1,5 @@
 #include "Window.h"
-#include "Systems/Board.h"
+#include "FileManager.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -13,6 +13,7 @@ namespace R2SEGA8::Window
     // Mantém o estado da interface e a posse dos recursos SDL3 e ImGui.
     struct Window::Impl
     {
+        Callbacks callbacks;
         FileManager files;
         SDL_Window *window = nullptr;
         SDL_Renderer *renderer = nullptr;
@@ -21,8 +22,18 @@ namespace R2SEGA8::Window
         bool platformReady = false;
         bool rendererReady = false;
         bool running = true;
-        // Encaminha a função de carregamento ao seletor, sem inicializar recursos nativos.
-        explicit Impl(FileManager::OpenHandler handler) : files(std::move(handler)) {}
+        // Encaminha ações e consultas ao seletor, sem inicializar recursos nativos.
+        explicit Impl(Callbacks handlers)
+            : callbacks(std::move(handlers)), files(callbacks.inspectRom, callbacks.openRom) {}
+        // Notifica o encerramento uma única vez, mesmo com múltiplos eventos na fila.
+        void requestExit()
+        {
+            if (!running)
+                return;
+            running = false;
+            if (callbacks.exit)
+                callbacks.exit();
+        }
         // Libera somente os recursos cuja inicialização foi concluída.
         ~Impl()
         {
@@ -41,7 +52,7 @@ namespace R2SEGA8::Window
         }
     };
 
-    Window::Window(FileManager::OpenHandler handler) : impl_(std::make_unique<Impl>(std::move(handler))) {}
+    Window::Window(Callbacks callbacks) : impl_(std::make_unique<Impl>(std::move(callbacks))) {}
     Window::~Window() = default;
 
     void Window::open()
@@ -60,7 +71,7 @@ namespace R2SEGA8::Window
         state.renderer = SDL_CreateRenderer(state.window, nullptr);
         if (!state.renderer)
             throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderVSync(state.renderer, 0); // A Engine controla o ritmo; VSync será integrado posteriormente.
+        SDL_SetRenderVSync(state.renderer, 0); // O chamador controla o ritmo de apresentação.
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         state.contextReady = true;
@@ -91,7 +102,7 @@ namespace R2SEGA8::Window
             ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(state.window)))
-                state.running = false;
+                state.requestExit();
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_O &&
                 (event.key.mod & SDL_KMOD_CTRL))
                 state.files.requestOpen();
@@ -103,24 +114,24 @@ namespace R2SEGA8::Window
 
     namespace
     {
-        void drawBytes(const char *label, const std::vector<std::uint8_t> &bytes)
+        void drawBytes(const char *label, ByteView bytes)
         {
             if (!ImGui::CollapsingHeader(label))
                 return;
             if (ImGui::BeginChild(label, ImVec2(0, 180), ImGuiChildFlags_Borders))
             {
                 ImGuiListClipper clipper;
-                clipper.Begin(static_cast<int>((bytes.size() + 15) / 16));
+                clipper.Begin(static_cast<int>((bytes.size + 15) / 16));
                 while (clipper.Step())
                 {
                     for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
                     {
                         const std::size_t start = static_cast<std::size_t>(row) * 16;
                         ImGui::Text("%06X:", static_cast<unsigned>(start));
-                        for (std::size_t i = start; i < std::min(start + 16, bytes.size()); ++i)
+                        for (std::size_t i = start; i < std::min(start + 16, bytes.size); ++i)
                         {
                             ImGui::SameLine();
-                            ImGui::Text("%02X", static_cast<unsigned>(bytes[i]));
+                            ImGui::Text("%02X", static_cast<unsigned>(bytes.data[i]));
                         }
                     }
                 }
@@ -129,7 +140,7 @@ namespace R2SEGA8::Window
         }
     }
 
-    void Window::render(const Systems::Board *board)
+    void Window::render()
     {
         auto &state = *impl_;
         if (!state.rendererReady)
@@ -155,18 +166,20 @@ namespace R2SEGA8::Window
                         state.files.requestOpen();
                     ImGui::Separator();
                     if (ImGui::MenuItem("Exit"))
-                        state.running = false;
+                        state.requestExit();
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenuBar();
             }
-            if (board)
+            if (state.callbacks.memory)
             {
-                const auto &cartridge = board->cartridge();
-                drawBytes("Cartridge ROM (file offsets)", cartridge.rom());
-                drawBytes("System RAM (physical offsets)", board->ram());
+                const auto memory = state.callbacks.memory();
+                if (memory.rom.data)
+                    drawBytes("Cartridge ROM (file offsets)", memory.rom);
+                if (memory.ram.data)
+                    drawBytes("System RAM (physical offsets)", memory.ram);
             }
-            // O carregamento pode substituir a máquina ativa. Não acessar board após esta chamada.
+            // Consome as consultas antes das ações, que podem invalidar os bytes apresentados.
             state.files.draw();
         }
         ImGui::End();

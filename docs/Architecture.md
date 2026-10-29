@@ -25,6 +25,7 @@ ainda não estão implementados.
 | `src/Systems/Engine.cpp` | Inicialização da aplicação e coordenação de eventos, carregamento, emulação e apresentação. |
 | `src/Emulator.cpp` | Ponto de entrada que instancia `Systems::Engine` e chama `run()`. |
 | `src/Window` | Sessão SDL3 e interface Dear ImGui, incluindo o seletor de arquivos. |
+| `src/Window/Callbacks.h` | Contrato de ações e consultas da interface, com dados de apresentação independentes da emulação. |
 | `tests/Core` | Testes isolados dos componentes. |
 | `tests/Systems` | Testes de integração de cada máquina. |
 
@@ -36,8 +37,11 @@ ainda não estão implementados.
 - `Systems::Engine::run()`, em `Engine.cpp`, coordena a sessão da aplicação e utiliza
   `Window` para processar eventos e apresentar a interface. Ele é compilado apenas
   com a aplicação gráfica; o núcleo permanece independente de SDL3 e ImGui.
-- `Window` utiliza os sistemas e converte entrada, vídeo e áudio entre
-  a máquina emulada e o computador do usuário.
+- `Window` depende apenas de SDL3, ImGui, tipos compartilhados de `Common` e
+  seu contrato de callbacks. Não inclui nem vincula `Core`, `Board` ou `Engine`.
+- A `Engine` registra callbacks para inspeção de ROM, carregamento, consulta
+  de memória e encerramento. A interface transmite caminho e seleção; somente
+  a `Engine` cria cartuchos e aciona a `Board`.
 - O Z80 acessa memória e portas por contratos do barramento. O mapa concreto
   pertence ao sistema emulado.
 - `Z80::tick()` executa um T-state e chama `Z80Bus::clock()`, permitindo que o
@@ -60,15 +64,41 @@ configuração ou implementação, sem acoplar o chip aos nomes dos sistemas.
 `Window` é a interface atual. Não mantemos uma segunda camada `Frontend`
 vazia; outra interface poderá ganhar sua própria pasta quando houver necessidade.
 
+## Comunicação com a interface
+
+```mermaid
+flowchart LR
+    E[Engine] -->|inicializa com callbacks| W[Window]
+    W -->|solicita ações e dados por callbacks| E
+    E -->|cria e executa| B[Board]
+```
+
+`RomPreview` contém somente caminho e metadados para apresentação. O seletor
+de arquivos navega nas pastas, mas solicita a inspeção ao callback em vez de
+ler a ROM como um cartucho. Ao confirmar, envia caminho e sistema escolhido
+ao callback de carregamento. Exceções desses callbacks aparecem no diálogo,
+sem substituir a placa ativa quando a operação falha.
+
+Os visualizadores recebem `MemoryView`, com consultas de leitura a bytes,
+sem conhecer sua origem. O proprietário mantém esses bytes válidos durante
+a apresentação. A interface termina de usá-los antes de emitir ações que
+possam invalidá-los, como carregar outra ROM. Essa consulta evita copiar toda
+a ROM a cada quadro. `Window::render()` não recebe objetos da emulação.
+
+O teste da janela também usa callbacks com dados de apresentação e vincula
+somente a biblioteca de interface; seus cenários não precisam do núcleo.
+
 ## Carregamento e memória nesta entrega
 
 1. `Common::readRomFile` lê uma imagem bruta, rejeitando arquivos vazios,
    diretórios, falhas de leitura, ZIP e imagens acima do limite de alocação de 16 MiB.
 2. `Core::Cartridge` conserva os bytes originais e o caminho do arquivo. Extensão
    e cabeçalho Sega fornecem sugestões; não certificam compatibilidade.
-3. `Window::FileManager` mostra a sugestão e permite escolher o sistema antes
-   de carregar. O cabeçalho tem precedência sobre a extensão, com aviso de conflito.
-4. `Systems::createBoard` constrói a placa específica com CPU, cartucho e RAM.
+3. A `Engine` fornece a prévia por callback. `Window::FileManager` mostra a
+   sugestão e permite escolher o sistema antes de notificar o carregamento.
+   O cabeçalho tem precedência sobre a extensão, com aviso de conflito.
+4. A `Engine` lê o cartucho confirmado e chama `Systems::createBoard` para
+   construir a placa específica com CPU, cartucho e RAM.
    A máquina ativa só é substituída depois que a construção termina com sucesso.
 
 O tamanho do arquivo não define o tamanho do espaço de endereçamento da CPU.

@@ -1,12 +1,7 @@
 #pragma once
 
-#include "FileManager.h"
+#include "Callbacks.h"
 #include <memory>
-
-namespace R2SEGA8::Systems
-{
-    class Board;
-}
 
 namespace R2SEGA8::Window
 {
@@ -15,8 +10,8 @@ namespace R2SEGA8::Window
     class Window
     {
     public:
-        // Configura o carregamento de ROMs sem criar recursos SDL3 ou ImGui.
-        explicit Window(FileManager::OpenHandler openHandler);
+        // Configura ações e consultas sem criar recursos SDL3 ou ImGui.
+        explicit Window(Callbacks callbacks);
 
         // Encerra os componentes ImGui e libera o renderizador, a janela e a sessão SDL3.
         ~Window();
@@ -38,10 +33,9 @@ namespace R2SEGA8::Window
         // Retorna false quando a saída foi solicitada; exige uma sessão inicializada.
         bool processEvents();
 
-        // Desenha e apresenta a interface; board pode ser nulo quando não há ROM.
-        // A função de carregamento pode substituir a máquina após sua exibição.
+        // Consulta os dados de apresentação e notifica ações pelos callbacks.
         // Exige uma sessão inicializada e propaga falhas de renderização SDL3.
-        void render(const Systems::Board *board);
+        void render();
 
     private:
         // Oculta os tipos nativos e centraliza o estado e a liberação dos recursos.

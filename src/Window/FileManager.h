@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/Cartridge/Cartridge.h"
+#include "Callbacks.h"
 #include <array>
 #include <functional>
 #include <optional>
@@ -9,17 +9,13 @@
 
 namespace R2SEGA8::Window
 {
-    // Gerencia o seletor de ROMs em Dear ImGui, a navegação por pastas e a prévia
-    // do cartucho. Delega a criação da máquina à função de carregamento recebida.
+    // Gerencia o seletor de ROMs, a navegação por pastas e os dados de apresentação.
+    // Solicita inspeção e carregamento pelos callbacks recebidos.
     class FileManager
     {
     public:
-        // Função chamada com uma cópia do cartucho e o sistema escolhido.
-        // Exceções são apresentadas no seletor, mantendo a seleção para nova tentativa.
-        using OpenHandler = std::function<void(Core::Cartridge, Common::SystemType)>;
-
-        // Define a função de carregamento e usa o diretório atual como pasta inicial.
-        explicit FileManager(OpenHandler handler);
+        // Define os callbacks de inspeção e carregamento e usa a pasta atual como ponto inicial.
+        FileManager(Callbacks::InspectRom inspectHandler, Callbacks::OpenRom openHandler);
 
         // Agenda a abertura do seletor e descarta a prévia anterior. Quando recebe
         // um arquivo, tenta abrir sua pasta e preparar a prévia; falhas ficam no diálogo.
@@ -41,8 +37,8 @@ namespace R2SEGA8::Window
         // Falhas de acesso são propagadas para apresentação pelo chamador.
         void navigate(const std::filesystem::path &path);
 
-        // Descarta a prévia anterior, lê o arquivo e prepara a sugestão de sistema.
-        // Propaga falhas de leitura para apresentação pelo chamador.
+        // Descarta a prévia anterior e solicita dados de apresentação ao callback.
+        // Propaga falhas para apresentação pelo chamador.
         void inspect(const std::filesystem::path &path);
 
         // Interpreta o campo de caminho como pasta ou arquivo e exibe eventuais erros.
@@ -51,11 +47,12 @@ namespace R2SEGA8::Window
         // Desenha o seletor de unidades no Windows e navega para a raiz escolhida.
         // Em outras plataformas, não desenha controles.
         void drawDriveSelector();
-        
-        OpenHandler handler_;
+
+        Callbacks::InspectRom inspectHandler_;
+        Callbacks::OpenRom openHandler_;
         std::filesystem::path directory_;
         std::vector<Entry> entries_;
-        std::optional<Core::Cartridge> candidate_;
+        std::optional<RomPreview> candidate_;
         std::array<char, 4096> pathInput_{};
         Common::SystemType selected_ = Common::SystemType::Unknown;
         std::string error_;

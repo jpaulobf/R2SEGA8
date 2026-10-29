@@ -15,7 +15,8 @@
 
 namespace R2SEGA8::Window
 {
-    FileManager::FileManager(OpenHandler handler) : handler_(std::move(handler))
+    FileManager::FileManager(Callbacks::InspectRom inspectHandler, Callbacks::OpenRom openHandler)
+        : inspectHandler_(std::move(inspectHandler)), openHandler_(std::move(openHandler))
     {
         std::error_code error;
         directory_ = std::filesystem::current_path(error);
@@ -71,9 +72,11 @@ namespace R2SEGA8::Window
     {
         candidate_.reset();
         selected_ = Common::SystemType::Unknown;
-        candidate_.emplace(path);
-        selected_ = candidate_->suggestedSystem();
-        const auto encoded = candidate_->path().u8string();
+        if (!inspectHandler_)
+            throw std::runtime_error("ROM inspection is unavailable.");
+        candidate_ = inspectHandler_(path);
+        selected_ = candidate_->suggestedSystem;
+        const auto encoded = candidate_->path.u8string();
         std::snprintf(pathInput_.data(), pathInput_.size(), "%s", encoded.c_str());
         error_.clear();
     }
@@ -208,7 +211,7 @@ namespace R2SEGA8::Window
                     const auto &entry = entries_[static_cast<std::size_t>(i)];
                     ImGui::PushID(i);
                     // Nomes podem conter o delimitador ## do ImGui; desenha o texto separadamente.
-                    const bool clicked = ImGui::Selectable("##entry", candidate_ && candidate_->path() == entry.path);
+                    const bool clicked = ImGui::Selectable("##entry", candidate_ && candidate_->path == entry.path);
                     const std::string label = (entry.directory ? "[DIR] " : "") + entry.name;
                     ImGui::GetWindowDrawList()->AddText(ImGui::GetItemRectMin(), ImGui::GetColorU32(ImGuiCol_Text), label.c_str());
                     if (clicked)
@@ -234,11 +237,11 @@ namespace R2SEGA8::Window
         }
         if (candidate_)
         {
-            ImGui::Text("ROM: %zu bytes", candidate_->rom().size());
-            ImGui::Text("Suggested system: %s", Common::systemName(candidate_->suggestedSystem()));
-            if (candidate_->conflictingHints())
+            ImGui::Text("ROM: %zu bytes", candidate_->size);
+            ImGui::Text("Suggested system: %s", Common::systemName(candidate_->suggestedSystem));
+            if (candidate_->conflictingHints)
                 ImGui::TextWrapped("Extension and Sega header disagree. Confirm the system below.");
-            if (!candidate_->header())
+            if (!candidate_->hasHeader)
                 ImGui::TextWrapped("No Sega header found. This is normal for many early-system ROMs.");
             ImGui::TextWrapped("Identification is a suggestion; loading does not verify game compatibility.");
             if (ImGui::BeginCombo("System", Common::systemName(selected_)))
@@ -259,9 +262,9 @@ namespace R2SEGA8::Window
         {
             try
             {
-                if (!handler_)
+                if (!openHandler_)
                     throw std::runtime_error("ROM loading is unavailable.");
-                handler_(*candidate_, selected_);
+                openHandler_(candidate_->path, selected_);
                 candidate_.reset();
                 error_.clear();
                 ImGui::CloseCurrentPopup();

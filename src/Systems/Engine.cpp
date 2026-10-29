@@ -17,9 +17,17 @@ int R2SEGA8::Systems::Engine::run()
         constexpr unsigned targetFPS = 60;
         const auto frameDuration = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / targetFPS));
         std::uint64_t cycleRemainder = 0;
-        R2SEGA8::Window::Window window([&](R2SEGA8::Core::Cartridge cartridge, R2SEGA8::Common::SystemType type)
-                                       {
-            auto next = R2SEGA8::Systems::createBoard(type, std::move(cartridge));
+        bool running = true;
+        R2SEGA8::Window::Callbacks callbacks;
+        callbacks.inspectRom = [](const std::filesystem::path &path)
+        {
+            const R2SEGA8::Core::Cartridge cartridge(path);
+            return R2SEGA8::Window::RomPreview{cartridge.path(), cartridge.rom().size(), cartridge.suggestedSystem(),
+                                               cartridge.header().has_value(), cartridge.conflictingHints()};
+        };
+        callbacks.openRom = [&](const std::filesystem::path &file, R2SEGA8::Common::SystemType type)
+        {
+            auto next = R2SEGA8::Systems::createBoard(type, R2SEGA8::Core::Cartridge(file));
             board = std::move(next);
             cycleRemainder = 0;
             const auto &loaded = board->cartridge();
@@ -34,9 +42,21 @@ int R2SEGA8::Systems::Engine::run()
                 std::puts("SG-1000: Z80 enabled; 0000-BFFF cartridge; C000-FFFF mirrored 1 KiB RAM. Video, audio, input, cartridge RAM and banking are pending.");
             else
                 std::puts("ROM loaded; system memory mapping is not implemented yet.");
-            std::fflush(stdout); });
+            std::fflush(stdout);
+        };
+        callbacks.memory = [&]() -> R2SEGA8::Window::MemoryView
+        {
+            if (!board)
+                return {};
+            const auto &rom = board->cartridge().rom();
+            const auto &ram = board->ram();
+            return {{rom.data(), rom.size()}, {ram.data(), ram.size()}};
+        };
+        callbacks.exit = [&]()
+        { running = false; };
+        R2SEGA8::Window::Window window(std::move(callbacks));
         window.open();
-        while (true)
+        while (running)
         {
             const auto frameStart = Clock::now();
             if (!window.processEvents())
@@ -50,7 +70,7 @@ int R2SEGA8::Systems::Engine::run()
                 if (budget)
                     board->runCycles(budget);
             }
-            window.render(board.get());
+            window.render();
             // Cede a CPU ao sistema operacional até completar o intervalo de 60 FPS.
             std::this_thread::sleep_until(frameStart + frameDuration);
         }
