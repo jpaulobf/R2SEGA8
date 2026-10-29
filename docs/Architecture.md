@@ -1,7 +1,8 @@
 # Arquitetura do R2SEGA8
 
 Alvos: SG-1000, SC-3000, Master System e Game Gear. A primeira entrega permite
-abrir e inspecionar ROMs em uma interface SDL3 / Dear ImGui. CPU, VDP e áudio
+abrir e inspecionar ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
+executa por T-state no perfil inicial do SG-1000. VDP, áudio e controles
 ainda não estão implementados.
 
 ## Responsabilidades
@@ -20,6 +21,8 @@ ainda não estão implementados.
 | `src/Core/Input` | Estado dos dispositivos emulados, sem eventos SDL. |
 | `src/Core/Timing` | Contagem de ciclos e ferramentas de sincronização. |
 | `src/Systems` | Composição de cada máquina, mapas de memória, portas, reset e configuração. |
+| `src/Systems/Engine.cpp` | Inicialização da aplicação e coordenação de eventos, carregamento, emulação e apresentação. |
+| `src/Emulator.cpp` | Ponto de entrada que instancia `Systems::Engine` e chama `run()`. |
 | `src/Window` | Sessão SDL3 e interface Dear ImGui, incluindo o seletor de arquivos. |
 | `tests/Core` | Testes isolados dos componentes. |
 | `tests/Systems` | Testes de integração de cada máquina. |
@@ -28,13 +31,17 @@ ainda não estão implementados.
 
 - `Common` não depende de SDL3, ImGui, `Core` ou `Systems`.
 - `Core` utiliza `Common` e não depende de `Systems` ou SDL3.
-- `Systems` utiliza `Core` e define como os componentes se conectam.
+- As classes de máquinas em `Systems` utilizam `Core` e definem como os componentes se conectam.
+- `Systems::Engine::run()`, em `Engine.cpp`, coordena a sessão da aplicação e utiliza
+  `Window` para processar eventos e apresentar a interface. Ele é compilado apenas
+  com a aplicação gráfica; o núcleo permanece independente de SDL3 e ImGui.
 - `Window` utiliza os sistemas e converte entrada, vídeo e áudio entre
   a máquina emulada e o computador do usuário.
 - O Z80 acessa memória e portas por contratos do barramento. O mapa concreto
   pertence ao sistema emulado.
-- Os componentes informam ou consomem ciclos; o sistema coordena sua execução
-  usando as ferramentas de `Timing`.
+- `Z80::tick()` executa um T-state e chama `Z80Bus::clock()`, permitindo que o
+  sistema avance os periféricos junto da CPU. `runCycles()` preserva instruções
+  incompletas ao esgotar exatamente seu orçamento. `step()` serve à depuração.
 - Os dispositivos de áudio geram amostras; o frontend entrega essas amostras
   ao dispositivo de áudio do computador.
 - Variantes de chips compartilham implementação quando adequado, mantendo
@@ -93,11 +100,12 @@ e a organização de janela do R2BOY.
 
 ## Próximas etapas
 
-1. Evoluir o acesso de memória do SG-1000 para um contrato de barramento e
-   implementar o Z80, validando instruções, flags, interrupções e ciclos.
-2. Integrar TMS9918 e PSG ao SG-1000, começando com programas de teste.
-3. Apresentar vídeo e reproduzir áudio pela interface SDL3 existente.
-4. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
+O contrato de barramento e o Z80 estão implementados e descritos em
+[Z80.md](Z80.md). A sequência seguinte é:
+
+1. Integrar TMS9918 e PSG ao SG-1000 pelo clock do barramento, começando com programas de teste.
+2. Apresentar vídeo e reproduzir áudio pela interface SDL3 existente.
+3. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
    específicos antes de anunciar suporte de execução.
 
 FM, periféricos e mapeadores adicionais podem ser introduzidos conforme os
