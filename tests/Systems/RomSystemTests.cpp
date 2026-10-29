@@ -1,5 +1,5 @@
 #include "Common/RomFile.h"
-#include "Systems/System.h"
+#include "Systems/Board.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -75,34 +75,34 @@ int main()
         for (std::size_t i = 0; i < bytes.size(); ++i)
             bytes[i] = static_cast<std::uint8_t>((i * 13 + i / 256) & 255);
         const auto sgPath = fixtures.write("fixture.SG", bytes);
-        auto system = Systems::createSystem(SystemType::SG1000, Core::Cartridge(sgPath));
-        check(system->cartridge().rom() == bytes, "ROM bytes changed on load");
-        check(system->cartridge().suggestedSystem() == SystemType::SG1000, "Case-insensitive extension hint");
-        check(system->ram().size() == 1024, "SG RAM size");
+        auto board = Systems::createBoard(SystemType::SG1000, Core::Cartridge(sgPath));
+        check(board->cartridge().rom() == bytes, "ROM bytes changed on load");
+        check(board->cartridge().suggestedSystem() == SystemType::SG1000, "Case-insensitive extension hint");
+        check(board->ram().size() == 1024, "SG RAM size");
         for (unsigned address = 0; address < 0xc000; ++address)
-            check(system->readMemory(static_cast<std::uint16_t>(address)) == bytes[address], "SG ROM mapping");
+            check(board->readMemory(static_cast<std::uint16_t>(address)) == bytes[address], "SG ROM mapping");
         for (unsigned i = 0; i < 1024; ++i)
-            system->writeMemory(static_cast<std::uint16_t>(0xc000 + i), static_cast<std::uint8_t>(i * 7));
+            board->writeMemory(static_cast<std::uint16_t>(0xc000 + i), static_cast<std::uint8_t>(i * 7));
         for (unsigned address = 0xc000; address <= 0xffff; ++address)
-            check(system->readMemory(static_cast<std::uint16_t>(address)) == static_cast<std::uint8_t>((address & 1023) * 7),
+            check(board->readMemory(static_cast<std::uint16_t>(address)) == static_cast<std::uint8_t>((address & 1023) * 7),
                   "SG RAM must mirror through FFFF");
-        system->writeMemory(0, 0x99);
-        check(system->readMemory(0) == bytes[0], "Writes must not change ROM");
-        auto *previous = system.get();
+        board->writeMemory(0, 0x99);
+        check(board->readMemory(0) == bytes[0], "Writes must not change ROM");
+        auto *previous = board.get();
         rejects([&]
-                { system = Systems::createSystem(SystemType::Unknown, Core::Cartridge(sgPath)); }, "Unknown system accepted");
-        check(system.get() == previous, "Failed load replaced the active machine");
+                { board = Systems::createBoard(SystemType::Unknown, Core::Cartridge(sgPath)); }, "Unknown system accepted");
+        check(board.get() == previous, "Failed load replaced the active machine");
         const auto banked = fixtures.write("banked.sg", std::vector<std::uint8_t>(0x10000, 1));
         rejects([&]
-                { system = Systems::createSystem(SystemType::SG1000, Core::Cartridge(banked)); }, "Oversized SG plain ROM accepted");
-        check(system.get() == previous && system->readMemory(0xc007) == 49, "Failed replacement damaged RAM");
+                { board = Systems::createBoard(SystemType::SG1000, Core::Cartridge(banked)); }, "Oversized SG plain ROM accepted");
+        check(board.get() == previous && board->readMemory(0xc007) == 49, "Failed replacement damaged RAM");
 
         const auto small = fixtures.write("small.bin", {0x12, 0x34, 0x56});
-        auto smallSystem = Systems::createSystem(SystemType::SG1000, Core::Cartridge(small));
-        check(smallSystem->readMemory(2) == 0x56 && smallSystem->readMemory(3) == 0xff, "Unpopulated ROM handling");
-        check(smallSystem->cartridge().suggestedSystem() == SystemType::Unknown, "Unknown extension guessed a system");
+        auto smallBoard = Systems::createBoard(SystemType::SG1000, Core::Cartridge(small));
+        check(smallBoard->readMemory(2) == 0x56 && smallBoard->readMemory(3) == 0xff, "Unpopulated ROM handling");
+        check(smallBoard->cartridge().suggestedSystem() == SystemType::Unknown, "Unknown extension guessed a system");
         const auto cpuProgram = fixtures.write("cpu.sg", {0x31, 0x00, 0xc4, 0x3e, 0x42, 0x32, 0x05, 0xc0, 0x76});
-        auto executing = Systems::createSystem(SystemType::SG1000, Core::Cartridge(cpuProgram));
+        auto executing = Systems::createBoard(SystemType::SG1000, Core::Cartridge(cpuProgram));
         check(executing->clockFrequency() == 3579545 && executing->runCycles(34) == 34, "SG CPU clock/budget");
         check(executing->cpu().state().halted && executing->cpu().state().sp == 0xc400 &&
                   executing->readMemory(0xfc05) == 0x42,
@@ -112,12 +112,12 @@ int main()
         executing->output(0xbe, 0x55);
         executing->cpu().reset();
         check(executing->cpu().state().pc == 0 && executing->readMemory(0xc005) == 0x42, "CPU reset does not clear system RAM");
-        check(std::all_of(smallSystem->ram().begin(), smallSystem->ram().end(), [](auto value)
+        check(std::all_of(smallBoard->ram().begin(), smallBoard->ram().end(), [](auto value)
                           { return value == 0; }),
               "RAM initialization");
         for (auto type : {SystemType::SC3000, SystemType::MasterSystem, SystemType::GameGear})
         {
-            auto other = Systems::createSystem(type, Core::Cartridge(small));
+            auto other = Systems::createBoard(type, Core::Cartridge(small));
             check(other->type() == type && other->cartridge().rom().size() == 3, "System factory lost cartridge/type");
             check(other->ram().size() == (type == SystemType::SC3000 ? 1024u : 8192u), "System RAM allocation");
             check(!other->hasMemoryMap(), "Unimplemented mapping advertised as available");
