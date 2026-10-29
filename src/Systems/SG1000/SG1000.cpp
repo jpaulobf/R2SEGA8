@@ -5,7 +5,7 @@
 namespace R2SEGA8::Systems
 {
     SG1000::SG1000(Core::Cartridge cartridge)
-        : System(Common::SystemType::SG1000, std::move(cartridge), 1024)
+        : Board(Common::SystemType::SG1000, std::move(cartridge), 1024)
     {
         if (cartridge_.rom().size() > 0xc000)
             throw std::runtime_error("The initial SG-1000 plain ROM profile supports up to 48 KiB. Banked cartridges are pending.");
