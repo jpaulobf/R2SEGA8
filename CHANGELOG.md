@@ -4,6 +4,10 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Interface desacoplada da emulação: `Window` e `FileManager` comunicam ações
+  e consultas por callbacks; a `Engine` inspeciona ROMs, cria cartuchos e aciona a `Board`.
+- Teste da janela independente do núcleo, incluindo erros de callbacks e notificação de saída.
+
 - Limite provisório de 60 FPS na `Engine`, com pausa entre quadros e orçamento
   de CPU por quadro; controle de ritmo removido da janela e VSync desativado por enquanto.
 
