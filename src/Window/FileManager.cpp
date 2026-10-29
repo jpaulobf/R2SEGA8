@@ -40,6 +40,16 @@ namespace R2SEGA8::Window
                 continue;
             try
             {
+                if (!directory)
+                {
+                    auto extension = item.path().extension().u8string();
+                    std::transform(extension.begin(), extension.end(), extension.begin(),
+                                   [](unsigned char character)
+                                   { return static_cast<char>(std::tolower(character)); });
+                    if (extension != ".zip" && extension != ".sg" && extension != ".sc" &&
+                        extension != ".sms" && extension != ".gg" && extension != ".bin")
+                        continue;
+                }
                 entries.push_back({item.path(), item.path().filename().u8string(), directory});
             }
             catch (const std::filesystem::filesystem_error &)
@@ -108,6 +118,7 @@ namespace R2SEGA8::Window
     {
 #ifdef _WIN32
         const auto current = directory_.root_name().u8string();
+        ImGui::SetNextItemWidth(50.0f);
         if (!ImGui::BeginCombo("Drive", current.empty() ? "Select a drive" : current.c_str()))
             return;
 
@@ -162,9 +173,6 @@ namespace R2SEGA8::Window
             candidate_.reset();
             selected_ = Common::SystemType::Unknown;
         }
-        if (ImGui::Button("Go / Inspect"))
-            openPath();
-        ImGui::SameLine();
         if (ImGui::Button("Up"))
         {
             try
