@@ -164,30 +164,12 @@ namespace R2SEGA8::Window
                 }
                 ImGui::EndMenuBar();
             }
-            ImGui::TextUnformatted("R2SEGA8 - ROM Inspector");
-            ImGui::Separator();
-            if (!system)
-                ImGui::TextWrapped("Open a ROM with File > Open, Ctrl+O, or drag a file into this window.");
-            else
+            if (system)
             {
                 const auto &cartridge = system->cartridge();
-                const auto path = cartridge.path().u8string();
-                ImGui::Text("System: %s", Common::systemName(system->type()));
-                ImGui::TextWrapped("File: %s", path.c_str());
-                ImGui::Text("ROM: %zu bytes | System RAM: %zu bytes", cartridge.rom().size(), system->ram().size());
-                if (cartridge.header())
-                    ImGui::Text("Sega header: 0x%04X | Region: %X | Size code: %X",
-                                static_cast<unsigned>(cartridge.header()->offset), static_cast<unsigned>(cartridge.header()->region),
-                                static_cast<unsigned>(cartridge.header()->sizeCode));
-                if (system->hasMemoryMap())
-                    ImGui::TextWrapped("SG-1000 plain ROM profile: 0000-BFFF cartridge; C000-FFFF mirrored 1 KiB RAM. Cartridge RAM and banking are pending.");
-                else
-                    ImGui::TextWrapped("ROM loaded; system memory mapping is not implemented yet.");
                 drawBytes("Cartridge ROM (file offsets)", cartridge.rom());
                 drawBytes("System RAM (physical offsets)", system->ram());
             }
-            ImGui::Separator();
-            ImGui::TextWrapped("CPU, video and audio emulation are not implemented yet.");
             // O carregamento pode substituir a máquina ativa. Não acessar system após esta chamada.
             state.files.draw();
         }
