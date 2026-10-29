@@ -101,6 +101,17 @@ int main()
         auto smallSystem = Systems::createSystem(SystemType::SG1000, Core::Cartridge(small));
         check(smallSystem->readMemory(2) == 0x56 && smallSystem->readMemory(3) == 0xff, "Unpopulated ROM handling");
         check(smallSystem->cartridge().suggestedSystem() == SystemType::Unknown, "Unknown extension guessed a system");
+        const auto cpuProgram = fixtures.write("cpu.sg", {0x31, 0x00, 0xc4, 0x3e, 0x42, 0x32, 0x05, 0xc0, 0x76});
+        auto executing = Systems::createSystem(SystemType::SG1000, Core::Cartridge(cpuProgram));
+        check(executing->clockFrequency() == 3579545 && executing->runCycles(34) == 34, "SG CPU clock/budget");
+        check(executing->cpu().state().halted && executing->cpu().state().sp == 0xc400 &&
+                  executing->readMemory(0xfc05) == 0x42,
+              "SG program writes mirrored RAM through real CPU bus");
+        check(executing->runCycles(5) == 5 && executing->cpu().state().cycles == 39, "HALT respects an exact T-state budget");
+        check(executing->input(0xbe) == 0xff, "Unconnected ports return FF");
+        executing->output(0xbe, 0x55);
+        executing->cpu().reset();
+        check(executing->cpu().state().pc == 0 && executing->readMemory(0xc005) == 0x42, "CPU reset does not clear system RAM");
         check(std::all_of(smallSystem->ram().begin(), smallSystem->ram().end(), [](auto value)
                           { return value == 0; }),
               "RAM initialization");
@@ -110,6 +121,9 @@ int main()
             check(other->type() == type && other->cartridge().rom().size() == 3, "System factory lost cartridge/type");
             check(other->ram().size() == (type == SystemType::SC3000 ? 1024u : 8192u), "System RAM allocation");
             check(!other->hasMemoryMap(), "Unimplemented mapping advertised as available");
+            check(!other->clockFrequency(), "Unimplemented system must not be scheduled");
+            rejects([&]
+                    { other->runCycles(4); }, "CPU executed without an implemented memory map");
             rejects([&]
                     { other->readMemory(0); }, "Unimplemented read silently accepted");
             rejects([&]
