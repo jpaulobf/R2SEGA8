@@ -4,6 +4,9 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Classe base das máquinas renomeada de `System` para `Board`, com criação
+  pela fábrica `createBoard()` e integração à `Engine`.
+
 - Entrada da aplicação em `Emulator.cpp`, com inicialização e loop de emulação
   organizados em `Systems/Engine.cpp` pela classe `Engine` e seu método `run()`.
 
