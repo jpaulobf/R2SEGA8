@@ -12,6 +12,7 @@ option(R2SEGA8_BUILD_GUI "Build the SDL3 / Dear ImGui application" ON)
 add_library(r2sega8_core STATIC
     src/Core/CPU/Z80/Z80.cpp
     src/Core/CPU/Z80/Z80Clock.cpp
+    src/Core/VDP/TMS9918/TMS9918.cpp
     src/Common/RomFile.cpp
     src/Core/Cartridge/Cartridge.cpp
     src/Systems/Board.cpp
@@ -73,6 +74,15 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(tms9918_tests tests/Core/TMS9918Tests.cpp)
+    target_link_libraries(tms9918_tests PRIVATE r2sega8_core)
+    add_test(NAME tms9918_tests COMMAND tms9918_tests)
+    add_executable(tms9918_modes_tests tests/Core/TMS9918ModesTests.cpp)
+    target_link_libraries(tms9918_modes_tests PRIVATE r2sega8_core)
+    add_test(NAME tms9918_modes_tests COMMAND tms9918_modes_tests)
+    add_executable(sg1000_vdp_tests tests/Systems/SG1000VDPTests.cpp)
+    target_link_libraries(sg1000_vdp_tests PRIVATE r2sega8_core)
+    add_test(NAME sg1000_vdp_tests COMMAND sg1000_vdp_tests)
     add_executable(z80_tests tests/Core/Z80Tests.cpp)
     target_link_libraries(z80_tests PRIVATE r2sega8_core)
     add_test(NAME z80_tests COMMAND z80_tests)
