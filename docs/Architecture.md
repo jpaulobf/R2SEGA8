@@ -3,8 +3,8 @@
 Alvos: SG-1000, SC-3000, Master System e Game Gear. A primeira entrega permite
 abrir e inspecionar ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
 executa por T-state no perfil inicial do SG-1000, junto do TMS9918 com
-os backgrounds Graphics I/II, Text e Multicolor e interrupção de VBlank.
-Sprites, áudio e controles ainda não estão implementados.
+os backgrounds Graphics I/II, Text e Multicolor, sprites com buscas por dot e interrupção de VBlank.
+Áudio e controles ainda não estão implementados.
 
 ## Responsabilidades
 
@@ -141,8 +141,8 @@ O contrato de barramento e o Z80 estão implementados e descritos em
 [Z80.md](Z80.md). Os quatro modos de background do VDP e suas demonstrações
 estão em [TMS9918.md](TMS9918.md). A sequência seguinte é:
 
-1. Implementar os sprites do TMS9918, refinar os acessos à VRAM e integrar PSG e controles.
-2. Apresentar vídeo e reproduzir áudio pela interface SDL3 existente.
+1. Refinar a arbitragem/fetches de background da VRAM e integrar PSG e controles.
+2. Integrar reprodução de áudio e sincronização com vídeo pela interface SDL3 existente.
 3. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
    específicos antes de anunciar suporte de execução.
 
