@@ -118,7 +118,7 @@ janelas que ficam acessíveis à CPU.
 
 | Sistema | RAM interna alocada | Mapeamento nesta entrega |
 | --- | --- | --- |
-| SG-1000 | 1 KiB | Perfil de ROM simples de até 48 KiB; RAM espelhada. |
+| SG-1000 | 1 KiB | ROM simples de até 48 KiB ou perfil The Castle com 8 KiB de RAM no cartucho. |
 | SC-3000 | 1 KiB | Pendente; não inclui RAM de cartuchos BASIC ou expansões. |
 | Master System | 8 KiB | Pendente; ROM e RAM disponíveis apenas para inspeção. |
 | Game Gear | 8 KiB | Pendente; ROM e RAM disponíveis apenas para inspeção. |
@@ -126,13 +126,24 @@ janelas que ficam acessíveis à CPU.
 No perfil inicial do SG-1000, `0000–BFFF` lê a ROM nos mesmos offsets do
 arquivo e `C000–FFFF` acessa a RAM com espelhamento a cada 1 KiB. Escritas na
 ROM não a alteram. Áreas sem bytes de ROM retornam provisoriamente `FF`:
-espelhamento de ROM, comportamento elétrico do barramento, RAM de cartucho
-e bancos ainda precisam de implementação específica. Esse perfil não descreve
+espelhamento de ROM, comportamento elétrico do barramento e bancos ainda
+precisam de implementação específica. Esse perfil não descreve
 todos os cartuchos SG-1000.
 
+The Castle (Japan) utiliza outro perfil: ROM de 32 KiB, RAM de cartucho em
+`8000–9FFF` e ROM espelhada em `A000–BFFF` (offsets `2000–3FFF`). O cartucho
+é reconhecido por tamanho e CRC-32 `092F29D6`, independentemente do nome do
+arquivo; imagens desconhecidas continuam no perfil simples. A seleção explícita
+de `CartridgeProfile` permite configurar o hardware sem uma identificação automática.
+A RAM adicional pertence a `Cartridge`, começa zerada, não possui persistência
+e permanece separada do 1 KiB interno. Reset da CPU preserva ambas as memórias;
+carregar novamente cria outro cartucho. Esse suporte não inclui a versão taiwanesa.
+Referências: [catálogo do MAME](https://github.com/mamedev/mame/blob/master/hash/sg1000.xml)
+e [mapeamento do cartucho no MAME](https://github.com/mamedev/mame/blob/master/src/devices/bus/sega8/rom.cpp).
+
 A RAM começa zerada por convenção desta etapa, sem simulação do estado
-elétrico de partida. VRAM, RAM de cartucho e BIOS serão adicionadas com seus
-componentes; não pertencem a esse vetor de RAM interna.
+elétrico de partida. VRAM e RAM de cartucho pertencem aos respectivos componentes;
+uma futura BIOS também não pertence a esse vetor de RAM interna.
 
 Referências técnicas: [mapas de memória](https://www.smspower.org/Development/MemoryMap)
 e [cabeçalho Sega](https://www.smspower.org/Development/ROMHeader), documentados
