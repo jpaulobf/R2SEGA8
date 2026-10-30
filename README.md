@@ -9,13 +9,16 @@ A Sega SG-1000, SC-3000, Master System and Game Gear emulator written from
 scratch in C++, developed alongside R2NES / R2BOY.
 
 The project is in early development. You can load ROMs and
-run the SG-1000 CPU with backgrounds and sprites. Video support is
-incomplete and audio is still being developed; games are not fully supported yet.
+run SG-1000 games with backgrounds, sprites, controllers and PSG audio.
+Compatibility is still being improved; games are not fully supported yet.
 
 ## Opening a ROM
 
 Use **File > Open** or **Ctrl+O**, then click a ROM to load it immediately.
 Dragging a ROM into the window also loads it directly.
+
+Use **File > Reset** or **F12** to restart the current ROM, and **File > Unload**
+to stop emulation and close the cartridge. Audio preferences stay unchanged.
 
 The extension selects the system: `.sg`, `.sc`, `.sms` or `.gg` (case-insensitive).
 ZIP loading and automatic identification of `.bin` files will come later.
@@ -54,6 +57,7 @@ The application is generated in `bin/` (or `bin/Debug/`). See the
 - [Architecture and development roadmap](docs/Architecture.md)
 - [Z80 implementation and validation](docs/Z80.md)
 - [Initial TMS9918 video and demo ROM](docs/TMS9918.md)
+- [SN76489AN audio](docs/SN76489.md)
 - [Display options](docs/Display.md)
 - [Changelog](CHANGELOG.md)
 
