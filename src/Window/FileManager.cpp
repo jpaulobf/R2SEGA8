@@ -1,8 +1,7 @@
 #include "FileManager.h"
-#include <imgui.h>
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
+#include <imgui.h>
 #include <stdexcept>
 #include <utility>
 
@@ -15,8 +14,7 @@
 
 namespace R2SEGA8::Window
 {
-    FileManager::FileManager(Callbacks::InspectRom inspectHandler, Callbacks::OpenRom openHandler)
-        : inspectHandler_(std::move(inspectHandler)), openHandler_(std::move(openHandler))
+    FileManager::FileManager(Callbacks::OpenRom openHandler) : openHandler_(std::move(openHandler))
     {
         std::error_code error;
         directory_ = std::filesystem::current_path(error);
@@ -47,8 +45,8 @@ namespace R2SEGA8::Window
                     std::transform(extension.begin(), extension.end(), extension.begin(),
                                    [](unsigned char character)
                                    { return static_cast<char>(std::tolower(character)); });
-                    if (extension != ".zip" && extension != ".sg" && extension != ".sc" &&
-                        extension != ".sms" && extension != ".gg" && extension != ".bin")
+                    if (extension != ".zip" && extension != ".sg" && extension != ".sc" && extension != ".sms" && extension != ".gg" &&
+                        extension != ".bin")
                         continue;
                 }
                 entries.push_back({item.path(), item.path().filename().u8string(), directory});
@@ -57,59 +55,59 @@ namespace R2SEGA8::Window
             { /* Codificação do nome do arquivo não suportada. */
             }
         }
-        std::sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b)
+        std::sort(entries.begin(), entries.end(),
+                  [](const Entry &a, const Entry &b)
                   { return a.directory != b.directory ? a.directory > b.directory : a.name < b.name; });
         const auto encoded = absolute.u8string();
         directory_ = absolute;
         entries_ = std::move(entries);
-        candidate_.reset();
-        selected_ = Common::SystemType::Unknown;
-        std::snprintf(pathInput_.data(), pathInput_.size(), "%s", encoded.c_str());
+        pathLabel_ = encoded;
         error_.clear();
     }
 
-    void FileManager::inspect(const std::filesystem::path &path)
+    void FileManager::load(const std::filesystem::path &path)
     {
-        candidate_.reset();
-        selected_ = Common::SystemType::Unknown;
-        if (!inspectHandler_)
-            throw std::runtime_error("ROM inspection is unavailable.");
-        candidate_ = inspectHandler_(path);
-        selected_ = candidate_->suggestedSystem;
-        const auto encoded = candidate_->path.u8string();
-        std::snprintf(pathInput_.data(), pathInput_.size(), "%s", encoded.c_str());
+        auto extension = path.extension().u8string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        if (extension == ".zip")
+            throw std::runtime_error("ZIP archives are not supported yet. Extract a supported ROM first.");
+        if (extension == ".bin")
+            throw std::runtime_error("Automatic system detection for BIN files is not available yet.");
+        const auto system = Common::systemFromExtension(extension);
+        if (system == Common::SystemType::Unknown)
+            throw std::runtime_error("Unsupported ROM extension.");
+        if (!std::filesystem::is_regular_file(path))
+            throw std::runtime_error("The selected ROM file is unavailable.");
+        if (!openHandler_)
+            throw std::runtime_error("ROM loading is unavailable.");
+        openHandler_(path, system);
         error_.clear();
-    }
-
-    void FileManager::openPath()
-    {
-        try
-        {
-            auto path = std::filesystem::u8path(pathInput_.data());
-            if (path.is_relative())
-                path = directory_ / path;
-            if (std::filesystem::is_directory(path))
-                navigate(path);
-            else
-                inspect(path);
-        }
-        catch (const std::exception &error)
-        {
-            error_ = error.what();
-        }
+        open_ = false;
+        ImGui::CloseCurrentPopup();
     }
 
     void FileManager::requestOpen(const std::filesystem::path &file)
     {
         requested_ = true;
-        candidate_.reset();
-        selected_ = Common::SystemType::Unknown;
+        pendingFile_.reset();
         error_.clear();
         try
         {
-            navigate(file.empty() ? directory_ : std::filesystem::absolute(file).parent_path());
-            if (!file.empty())
-                inspect(file);
+            if (file.empty())
+                navigate(directory_);
+            else
+            {
+                const auto absolute = std::filesystem::absolute(file).lexically_normal();
+                if (std::filesystem::is_directory(absolute))
+                    navigate(absolute);
+                else
+                {
+                    navigate(absolute.parent_path());
+                    pendingFile_ = absolute;
+                }
+            }
         }
         catch (const std::exception &error)
         {
@@ -135,8 +133,8 @@ namespace R2SEGA8::Window
                 continue;
             const char letter = static_cast<char>('A' + i);
             const char root[] = {letter, ':', '\\', '\0'};
-            const bool selected = current.size() == 2 && current[1] == ':' &&
-                                  std::toupper(static_cast<unsigned char>(current[0])) == letter;
+            const bool selected =
+                current.size() == 2 && current[1] == ':' && std::toupper(static_cast<unsigned char>(current[0])) == letter;
             if (ImGui::Selectable(root, selected))
             {
                 try
@@ -164,18 +162,33 @@ namespace R2SEGA8::Window
         }
         const auto *viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowSize(ImVec2(720, 580), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(320, 300), viewport->WorkSize);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(320.0f, viewport->WorkSize.x), std::min(300.0f, viewport->WorkSize.y)),
+                                            viewport->WorkSize);
         bool visible = true;
-        if (!ImGui::BeginPopupModal("Open ROM", &visible))
+        open_ = ImGui::BeginPopupModal("Open ROM", &visible);
+        if (!open_)
             return;
-        ImGui::TextUnformatted("Raw ROM images: .sg, .sc, .sms, .gg, .bin (ZIP not supported yet)");
-        drawDriveSelector();
-        // Editar o caminho invalida a prévia anterior, impedindo o carregamento de uma seleção desatualizada.
-        if (ImGui::InputText("Path", pathInput_.data(), pathInput_.size()))
+        if (pendingFile_)
         {
-            candidate_.reset();
-            selected_ = Common::SystemType::Unknown;
+            const auto file = std::move(*pendingFile_);
+            pendingFile_.reset(); // Consome uma única tentativa, inclusive quando o callback falhar.
+            try
+            {
+                load(file);
+            }
+            catch (const std::exception &error)
+            {
+                error_ = error.what();
+            }
+            if (!open_)
+            {
+                ImGui::EndPopup();
+                return;
+            }
         }
+        ImGui::TextUnformatted("Click a ROM to load: .sg, .sc, .sms, .gg");
+        drawDriveSelector();
+        ImGui::TextWrapped("Path: %s", pathLabel_.c_str());
         if (ImGui::Button("Up"))
         {
             try
@@ -200,7 +213,10 @@ namespace R2SEGA8::Window
             }
         }
         std::optional<Entry> selection;
-        if (ImGui::BeginChild("Files", ImVec2(0, 180), ImGuiChildFlags_Borders))
+        const auto available = ImGui::GetContentRegionAvail();
+        const float errorHeight =
+            error_.empty() ? 0.0f : ImGui::CalcTextSize(error_.c_str(), nullptr, false, available.x).y + ImGui::GetStyle().ItemSpacing.y;
+        if (ImGui::BeginChild("Files", ImVec2(0, std::max(40.0f, available.y - errorHeight)), ImGuiChildFlags_Borders))
         {
             ImGuiListClipper clipper;
             clipper.Begin(static_cast<int>(entries_.size()));
@@ -211,7 +227,7 @@ namespace R2SEGA8::Window
                     const auto &entry = entries_[static_cast<std::size_t>(i)];
                     ImGui::PushID(i);
                     // Nomes podem conter o delimitador ## do ImGui; desenha o texto separadamente.
-                    const bool clicked = ImGui::Selectable("##entry", candidate_ && candidate_->path == entry.path);
+                    const bool clicked = ImGui::Selectable("##entry", false, ImGuiSelectableFlags_NoAutoClosePopups);
                     const std::string label = (entry.directory ? "[DIR] " : "") + entry.name;
                     ImGui::GetWindowDrawList()->AddText(ImGui::GetItemRectMin(), ImGui::GetColorU32(ImGuiCol_Text), label.c_str());
                     if (clicked)
@@ -228,59 +244,15 @@ namespace R2SEGA8::Window
                 if (selection->directory)
                     navigate(selection->path);
                 else
-                    inspect(selection->path);
+                    load(selection->path);
             }
             catch (const std::exception &error)
             {
                 error_ = error.what();
-            }
-        }
-        if (candidate_)
-        {
-            ImGui::Text("ROM: %zu bytes", candidate_->size);
-            ImGui::Text("Suggested system: %s", Common::systemName(candidate_->suggestedSystem));
-            if (candidate_->conflictingHints)
-                ImGui::TextWrapped("Extension and Sega header disagree. Confirm the system below.");
-            if (!candidate_->hasHeader)
-                ImGui::TextWrapped("No Sega header found. This is normal for many early-system ROMs.");
-            ImGui::TextWrapped("Identification is a suggestion; loading does not verify game compatibility.");
-            if (ImGui::BeginCombo("System", Common::systemName(selected_)))
-            {
-                for (auto type : {Common::SystemType::SG1000, Common::SystemType::SC3000,
-                                  Common::SystemType::MasterSystem, Common::SystemType::GameGear})
-                {
-                    if (ImGui::Selectable(Common::systemName(type), selected_ == type))
-                        selected_ = type;
-                }
-                ImGui::EndCombo();
             }
         }
         if (!error_.empty())
             ImGui::TextWrapped("%s", error_.c_str());
-        ImGui::BeginDisabled(!candidate_ || selected_ == Common::SystemType::Unknown);
-        if (ImGui::Button("Load ROM"))
-        {
-            try
-            {
-                if (!openHandler_)
-                    throw std::runtime_error("ROM loading is unavailable.");
-                openHandler_(candidate_->path, selected_);
-                candidate_.reset();
-                error_.clear();
-                ImGui::CloseCurrentPopup();
-            }
-            catch (const std::exception &error)
-            {
-                error_ = error.what();
-            }
-        }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
-        {
-            candidate_.reset();
-            ImGui::CloseCurrentPopup();
-        }
         ImGui::EndPopup();
     }
 }
