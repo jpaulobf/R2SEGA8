@@ -17,6 +17,14 @@ namespace R2SEGA8::Core
     void TMS9918::reset()
     {
         state_.registers.fill(0);
+        state_.background.fill({});
+        state_.outputMode = state_.outputStart = state_.outputWidth = 0;
+        state_.outputLine = 0;
+        state_.outputValid = false;
+        state_.cpuAccessPending = state_.cpuAccessWrite = false;
+        state_.cpuAccessData = state_.cpuAccessDelay = state_.refreshRow = 0;
+        state_.access = Access::None;
+        state_.accessAddress = state_.accessData = 0;
         state_.address = state_.dot = state_.line = 0;
         state_.readBuffer = state_.controlLatch = 0;
         state_.status = 0x1f;
@@ -31,7 +39,7 @@ namespace R2SEGA8::Core
         state_.extraFetchPhase = 0;
         state_.spriteTargetLine = 0;
         state_.spriteEvaluationStopped = true;
-        state_.evaluationSpriteLimit = state_.limitSpritesPerLine;
+        state_.evaluationSpriteUnlimited = state_.spriteUnlimited;
         for (auto &image : state_.images)
         {
             image.fill(0);
@@ -49,17 +57,15 @@ namespace R2SEGA8::Core
     {
         state_.secondControlByte = false;
         const auto value = state_.readBuffer;
-        state_.readBuffer = state_.vram[state_.address];
-        incrementAddress();
+        requestCPUAccess(false, 0);
         return value;
     }
 
     void TMS9918::writeData(std::uint8_t value)
     {
         state_.secondControlByte = false;
-        state_.vram[state_.address] = value;
         state_.readBuffer = value;
-        incrementAddress();
+        requestCPUAccess(true, value);
     }
 
     std::uint8_t TMS9918::readStatus()
@@ -80,14 +86,17 @@ namespace R2SEGA8::Core
             return;
         }
         state_.secondControlByte = false;
-        state_.address = static_cast<std::uint16_t>(((value & 0x3f) << 8) | state_.controlLatch);
         if (value & 0x80)
-            state_.registers[value & 7] = state_.controlLatch;
-        else if (!(value & 0x40))
         {
-            // O comando de leitura já faz a primeira pré-busca; o primeiro IN retorna esse byte.
-            state_.readBuffer = state_.vram[state_.address];
-            incrementAddress();
+            // No TMS99xxA, um incremento ocorrido entre os bytes também altera a parte baixa do ponteiro.
+            state_.address = static_cast<std::uint16_t>(((value & 0x3f) << 8) | (state_.address & 0xff));
+            state_.registers[value & 7] = state_.controlLatch;
+        }
+        else
+        {
+            state_.address = static_cast<std::uint16_t>(((value & 0x3f) << 8) | state_.controlLatch);
+            if (!(value & 0x40))
+                requestCPUAccess(false, 0); // A pré-busca aguarda preparação e um slot livre.
         }
     }
 
@@ -96,57 +105,197 @@ namespace R2SEGA8::Core
         return (state_.status & 0x80) && (state_.registers[1] & 0x20);
     }
 
+    void TMS9918::requestCPUAccess(bool writing, std::uint8_t value)
+    {
+        // O novo pedido troca tipo/dado, mas não reinicia a preparação do pedido já retido.
+        if (!state_.cpuAccessPending)
+            state_.cpuAccessDelay = CPUAccessDelay;
+        state_.cpuAccessPending = true;
+        state_.cpuAccessWrite = writing;
+        state_.cpuAccessData = value;
+    }
+
+    unsigned TMS9918::mode() const
+    {
+        return (state_.registers[0] & 2) | ((state_.registers[1] & 0x10) >> 4) | ((state_.registers[1] & 8) >> 1);
+    }
+
+    bool TMS9918::spritesEnabled() const
+    {
+        const auto videoMode = mode();
+        return (state_.registers[1] & 0x50) == 0x40 && (videoMode == 0 || videoMode == 2 || videoMode == 4);
+    }
+
+    std::uint8_t TMS9918::readVRAM(unsigned address, Access owner)
+    {
+        state_.access = owner;
+        state_.accessAddress = static_cast<std::uint16_t>(address & 0x3fff);
+        state_.accessData = state_.vram[state_.accessAddress];
+        return state_.accessData;
+    }
+
+    bool TMS9918::cpuSlot(unsigned cycle, unsigned videoMode, bool active) const
+    {
+        if (!(cycle & 1))
+            return false;
+        if (!active)
+            return !(cycle >= 53 && cycle <= 305 && (cycle - 53) % 4 == 0);
+        if (videoMode == 1)
+            return !((cycle >= 59 && cycle <= 293 && (cycle - 59) % 6 == 0) || (cycle >= 63 && cycle <= 297 && (cycle - 63) % 6 == 0));
+        const bool graphicsSlot = cycle <= 7 || (cycle >= 29 && cycle <= 35) || (cycle >= 55 && cycle <= 279 && (cycle - 55) % 32 == 0) ||
+                                  cycle == 309 || cycle == 311 || cycle == 341;
+        return graphicsSlot || (videoMode == 4 && cycle >= 57 && cycle <= 305 && (cycle - 57) % 8 == 0);
+    }
+
+    bool TMS9918::fetchBackground(unsigned cycle, unsigned videoMode)
+    {
+        unsigned column = 0, phase = 0;
+        if (videoMode == 1)
+        {
+            if (cycle >= 59 && cycle <= 293 && (cycle - 59) % 6 == 0)
+                column = (cycle - 59) / 6;
+            else if (cycle >= 63 && cycle <= 297 && (cycle - 63) % 6 == 0)
+            {
+                column = (cycle - 63) / 6;
+                phase = 2;
+            }
+            else
+                return false;
+        }
+        else
+        {
+            if (cycle < 53 || cycle > 307)
+                return false;
+            column = (cycle - 53) / 8;
+            const unsigned offset = (cycle - 53) % 8;
+            if (offset == 0)
+                phase = 0;
+            else if (offset == 4 && videoMode != 4)
+                phase = 1;
+            else if (offset == 6)
+                phase = 2;
+            else
+                return false;
+        }
+        const unsigned line = (state_.line + (state_.dot >= 332 ? 1 : 0)) % LinesPerFrame;
+        if (line >= Height)
+            return true;
+        auto &cell = state_.background[column & 1];
+        const auto &r = state_.registers;
+        if (phase == 0)
+        {
+            cell = {};
+            cell.column = static_cast<std::uint8_t>(column);
+            cell.line = static_cast<std::uint16_t>(line);
+            cell.mode = static_cast<std::uint8_t>(videoMode);
+            cell.name = readVRAM(((r[2] & 15) << 10) + (line / 8) * (videoMode == 1 ? 40 : 32) + column, Access::Name);
+            cell.named = true;
+            return true;
+        }
+        if (!cell.named || cell.line != line || cell.column != column || cell.mode != videoMode)
+            return true; // Mudanças de modo não inventam um nome que ainda não foi buscado.
+        const unsigned offset = ((line & 0xc0) << 5) | (cell.name << 3) | (line & 7);
+        const unsigned colorMask = ((r[3] & 0x7f) << 6) | 0x3f;
+        if (phase == 1)
+        {
+            const unsigned address = videoMode == 2 ? ((r[3] & 0x80) << 6) | (offset & colorMask) : (r[3] << 6) + cell.name / 8;
+            cell.colors = readVRAM(address, Access::Color);
+        }
+        else
+        {
+            const unsigned patternMask = ((r[4] & 3) << 11) | (colorMask & 0x7ff);
+            const unsigned address = videoMode == 2 ? ((r[4] & 4) << 11) | (offset & patternMask)
+                                                    : ((r[4] & 7) << 11) + cell.name * 8 + (videoMode == 4 ? (line / 4) & 7 : line & 7);
+            const auto value = readVRAM(address, Access::Pattern);
+            if (videoMode == 4)
+                cell.colors = value;
+            else
+                cell.pattern = value;
+            cell.ready = true;
+        }
+        return true;
+    }
+
+    void TMS9918::clockMemory()
+    {
+        state_.access = Access::None;
+        const unsigned videoMode = mode(), cycle = (state_.dot + 63) % DotsPerLine;
+        const bool enabled = (state_.registers[1] & 0x40) && (videoMode == 0 || videoMode == 1 || videoMode == 2 || videoMode == 4);
+        // A margem anterior já busca a primeira célula e os sprites antes da primeira linha visível.
+        const bool active = enabled && (state_.line < Height || state_.line == LinesPerFrame - 1 ||
+                                        (state_.line == LinesPerFrame - 2 && state_.dot >= 316));
+        clockSprites();
+        if (state_.access != Access::None)
+            return; // Um slot pertence a um único acesso físico, mesmo durante mudanças de modo.
+        if (state_.dot & 1)
+            return;
+        if (active && fetchBackground(cycle, videoMode))
+            return;
+        if (!active && cycle >= 53 && cycle <= 305 && (cycle - 53) % 4 == 0)
+        {
+            state_.access = Access::Refresh;
+            state_.accessAddress = state_.refreshRow;
+            state_.refreshRow = (state_.refreshRow + 1) & 0x7f;
+            return;
+        }
+        if (!cpuSlot(cycle, videoMode, active) || !state_.cpuAccessPending || state_.cpuAccessDelay)
+            return;
+        if (state_.cpuAccessWrite)
+        {
+            state_.access = Access::CPUWrite;
+            state_.accessAddress = state_.address;
+            state_.accessData = state_.cpuAccessData;
+            state_.vram[state_.address] = state_.cpuAccessData;
+        }
+        else
+            state_.readBuffer = readVRAM(state_.address, Access::CPURead);
+        incrementAddress();
+        state_.cpuAccessPending = false;
+    }
+
     std::uint8_t TMS9918::backgroundColor()
     {
-        const auto &r = state_.registers;
-        const unsigned mode = (r[0] & 2) | ((r[1] & 0x10) >> 4) | ((r[1] & 8) >> 1);
-        const unsigned x = state_.dot, y = state_.line;
-        const unsigned nameBase = (r[2] & 15) << 10;
-        if (mode == 1) // Text: 40 células de seis pixels, deslocadas seis pixels em relação a Graphics I.
+        const unsigned videoMode = mode(), x = state_.dot;
+        // O formato faz parte da célula carregada: trocar GI por Multicolor não reinterpreta seus bytes.
+        const bool continuing = state_.outputValid && state_.outputLine == state_.line && x >= state_.outputStart &&
+                                x < state_.outputStart + state_.outputWidth;
+        if (!continuing)
         {
-            if (x < 6 || x >= 246)
-                return r[7] & 15;
-            const unsigned column = (x - 6) / 6, pixel = (x - 6) % 6;
-            if (!pixel)
+            state_.outputValid = false;
+            const bool supported = videoMode == 0 || videoMode == 1 || videoMode == 2 || videoMode == 4;
+            const unsigned start = videoMode == 1 ? 6 : 0, width = videoMode == 1 ? 6 : 8;
+            const bool inside = videoMode != 1 || (x >= 6 && x < 246);
+            if (supported && inside && (x - start) % width == 0)
             {
-                const auto name = state_.vram[(nameBase + (y / 8) * 40 + column) & 0x3fff];
-                state_.pattern = state_.vram[(((r[4] & 7) << 11) + name * 8 + (y & 7)) & 0x3fff];
-            }
-            // Os dois bits inferiores do padrão não participam do caractere de seis pixels.
-            return (state_.pattern & (0x80 >> pixel)) ? r[7] >> 4 : r[7] & 15;
-        }
-        if (mode != 0 && mode != 2 && mode != 4)
-            return r[7] & 15; // Combinações não documentadas continuam fora deste perfil.
-        if (!(x & 7))
-        {
-            const auto name = state_.vram[(nameBase + (y / 8) * 32 + x / 8) & 0x3fff];
-            if (mode == 2) // Graphics II: padrões e cores por linha, em três blocos de 64 linhas.
-            {
-                const unsigned offset = ((y & 0xc0) << 5) | (name << 3) | (y & 7);
-                const unsigned colorMask = ((r[3] & 0x7f) << 6) | 0x3f;
-                // Nos TMS99xxA, os bits baixos da máscara de cores também limitam os padrões.
-                const unsigned patternMask = ((r[4] & 3) << 11) | (colorMask & 0x7ff);
-                state_.pattern = state_.vram[((r[4] & 4) << 11) | (offset & patternMask)];
-                state_.colors = state_.vram[((r[3] & 0x80) << 6) | (offset & colorMask)];
-            }
-            else if (mode == 4) // Multicolor: um byte define dois blocos horizontais de quatro pixels.
-                state_.colors = state_.vram[(((r[4] & 7) << 11) + name * 8 + ((y / 4) & 7)) & 0x3fff];
-            else
-            {
-                state_.pattern = state_.vram[(((r[4] & 7) << 11) + name * 8 + (y & 7)) & 0x3fff];
-                state_.colors = state_.vram[((r[3] << 6) + name / 8) & 0x3fff];
+                const unsigned column = (x - start) / width;
+                const auto &cell = state_.background[column & 1];
+                if (cell.ready && cell.line == state_.line && cell.column == column && cell.mode == videoMode)
+                {
+                    state_.pattern = cell.pattern;
+                    state_.colors = cell.colors;
+                    state_.outputMode = static_cast<std::uint8_t>(videoMode);
+                    state_.outputStart = static_cast<std::uint8_t>(x);
+                    state_.outputWidth = static_cast<std::uint8_t>(width);
+                    state_.outputLine = state_.line;
+                    state_.outputValid = true;
+                }
             }
         }
-        const bool foreground = mode == 4 ? !(x & 4) : (state_.pattern & (0x80 >> (x & 7))) != 0;
+        if (!state_.outputValid)
+            return state_.registers[7] & 15;
+        const unsigned pixel = x - state_.outputStart;
+        if (state_.outputMode == 1)
+            return (state_.pattern & (0x80 >> pixel)) ? state_.registers[7] >> 4 : state_.registers[7] & 15;
+        const bool foreground = state_.outputMode == 4 ? pixel < 4 : (state_.pattern & (0x80 >> pixel)) != 0;
         return foreground ? state_.colors >> 4 : state_.colors & 15;
     }
 
     void TMS9918::evaluateSprite(unsigned index)
     {
-        if (state_.spriteEvaluationStopped || (state_.registers[1] & 0x50) != 0x40)
+        if (state_.spriteEvaluationStopped || !spritesEnabled())
             return;
         const unsigned base = (state_.registers[5] & 0x7f) << 7;
-        const unsigned y = state_.vram[base + index * 4];
+        const unsigned y = readVRAM(base + index * 4, Access::SpriteY);
         if (!(state_.status & 0x40))
             state_.status = static_cast<std::uint8_t>((state_.status & 0xe0) | index);
         if (y == 0xd0)
@@ -164,7 +313,7 @@ namespace R2SEGA8::Core
             // 5S independe da opção visual: informa o primeiro quinto sprite e não gera INT.
             if (!(state_.status & 0xc0))
                 state_.status = static_cast<std::uint8_t>((state_.status & 0xa0) | 0x40 | index);
-            if (state_.evaluationSpriteLimit)
+            if (!state_.evaluationSpriteUnlimited)
             {
                 state_.spriteEvaluationStopped = true;
                 return;
@@ -173,15 +322,20 @@ namespace R2SEGA8::Core
         state_.evaluatedSprites[state_.selectedSprites++].index = static_cast<std::uint8_t>(index);
     }
 
-    void TMS9918::fetchSprite(Sprite &sprite, unsigned phase, unsigned targetLine)
+    void TMS9918::fetchSprite(Sprite &sprite, unsigned phase, unsigned targetLine, bool physical)
     {
         const auto &r = state_.registers;
         const unsigned entry = ((r[5] & 0x7f) << 7) + sprite.index * 4;
+        // O fetch extra da opção ilimitada não ocupa o barramento físico.
+        const auto read = [&](unsigned address, Access owner)
+        {
+            return physical ? readVRAM(address, owner) : state_.vram[address & 0x3fff];
+        };
         switch (phase)
         {
         case 0:
         {
-            sprite.y = state_.vram[entry];
+            sprite.y = read(entry, Access::SpriteAttribute);
             sprite.size = (r[1] & 2) ? 16 : 8;
             sprite.scale = (r[1] & 1) ? 2 : 1;
             const int top = (sprite.y > 0xe0 ? int(sprite.y) - 256 : int(sprite.y)) + 1;
@@ -191,20 +345,20 @@ namespace R2SEGA8::Core
             break;
         }
         case 1:
-            sprite.x = state_.vram[entry + 1];
+            sprite.x = read(entry + 1, Access::SpriteAttribute);
             break;
         case 2:
-            sprite.name = state_.vram[entry + 2];
+            sprite.name = read(entry + 2, Access::SpriteAttribute);
             break;
         case 3:
-            sprite.attributes = state_.vram[entry + 3];
+            sprite.attributes = read(entry + 3, Access::SpriteAttribute);
             break;
         default:
         {
             // SIZE=1 ignora os dois bits baixos do nome; os quadrantes são A/B à esquerda, C/D à direita.
             const unsigned name = sprite.name & (sprite.size == 16 ? 0xfc : 0xff);
             const unsigned address = ((r[6] & 7) << 11) + name * 8 + sprite.row + (phase == 5 ? 16 : 0);
-            const auto pattern = state_.vram[address & 0x3fff];
+            const auto pattern = read(address, Access::SpritePattern);
             if (phase == 4)
                 sprite.left = pattern;
             else
@@ -231,7 +385,7 @@ namespace R2SEGA8::Core
             state_.extraFetchIndex = 4;
             state_.extraFetchPhase = 0;
             state_.evaluatedSprites.fill({});
-            state_.evaluationSpriteLimit = state_.limitSpritesPerLine;
+            state_.evaluationSpriteUnlimited = state_.spriteUnlimited;
             state_.spriteEvaluationStopped = state_.spriteTargetLine >= Height;
         }
         if (dot >= 316 && dot <= 330 && !(dot & 1))
@@ -246,9 +400,9 @@ namespace R2SEGA8::Core
 
         // Extensão opcional: os sprites 5..32 usam um fetcher lógico separado, um byte por dot.
         // Ele não ocupa slots físicos adicionais nem modifica a cadência dos quatro sprites originais.
-        if (!state_.evaluationSpriteLimit && state_.extraFetchIndex < state_.selectedSprites)
+        if (spritesEnabled() && state_.evaluationSpriteUnlimited && state_.extraFetchIndex < state_.selectedSprites)
         {
-            fetchSprite(state_.evaluatedSprites[state_.extraFetchIndex], state_.extraFetchPhase, state_.spriteTargetLine);
+            fetchSprite(state_.evaluatedSprites[state_.extraFetchIndex], state_.extraFetchPhase, state_.spriteTargetLine, false);
             if (++state_.extraFetchPhase == 6)
             {
                 state_.extraFetchPhase = 0;
@@ -265,7 +419,7 @@ namespace R2SEGA8::Core
         // Y/X/nome/cor/padrão esquerdo/direito são buscados separadamente, inclusive o segundo padrão de SIZE=0.
         constexpr unsigned FetchDots[4][6] = {
             {250, 252, 254, 256, 258, 260}, {262, 264, 266, 268, 270, 272}, {274, 276, 288, 290, 292, 294}, {296, 298, 300, 302, 304, 306}};
-        for (unsigned index = 0; index < 4 && index < state_.nextSpriteCount; ++index)
+        for (unsigned index = 0; spritesEnabled() && index < 4 && index < state_.nextSpriteCount; ++index)
             for (unsigned phase = 0; phase < 6; ++phase)
                 if (dot == FetchDots[index][phase])
                     fetchSprite(state_.nextSprites[index], phase, target);
@@ -300,10 +454,11 @@ namespace R2SEGA8::Core
     void TMS9918::drawPixel()
     {
         const auto backdrop = state_.registers[7] & 15;
-        unsigned color = (state_.registers[1] & 0x40) ? backgroundColor() : backdrop;
+        const auto background = backgroundColor(); // Os latches continuam avançando mesmo com a saída apagada.
+        unsigned color = (state_.registers[1] & 0x40) ? background : backdrop;
         if (!color)
             color = backdrop;
-        if ((state_.registers[1] & 0x50) == 0x40)
+        if (spritesEnabled())
         {
             const auto sprite = spriteColor();
             if (sprite)
@@ -320,10 +475,12 @@ namespace R2SEGA8::Core
     void TMS9918::tick()
     {
         ++state_.masterTicks;
+        if (state_.cpuAccessDelay)
+            --state_.cpuAccessDelay;
         state_.masterPhase ^= 1;
         if (state_.masterPhase)
             return;
-        clockSprites();
+        clockMemory();
         if (state_.line < Height && state_.dot < Width)
             drawPixel();
         if (++state_.dot == DotsPerLine)
@@ -360,6 +517,17 @@ namespace R2SEGA8::Core
                 if (sprite.index > 31 || sprite.row > 15 || (sprite.size != 8 && sprite.size != 16) ||
                     (sprite.scale != 1 && sprite.scale != 2))
                     throw std::invalid_argument("Invalid TMS9918 sprite fetch state.");
+        if (state.cpuAccessDelay > CPUAccessDelay || state.refreshRow > 127 || state.accessAddress >= 0x4000 ||
+            static_cast<unsigned>(state.access) > static_cast<unsigned>(Access::SpritePattern))
+            throw std::invalid_argument("Invalid TMS9918 memory sequencer state.");
+        if (state.outputLine >= LinesPerFrame || (state.outputWidth != 0 && state.outputWidth != 6 && state.outputWidth != 8) ||
+            state.outputStart + state.outputWidth > Width ||
+            (state.outputValid &&
+             (!state.outputWidth || (state.outputMode != 0 && state.outputMode != 1 && state.outputMode != 2 && state.outputMode != 4))))
+            throw std::invalid_argument("Invalid TMS9918 background output latch.");
+        for (const auto &cell : state.background)
+            if (cell.line >= LinesPerFrame || cell.column > 39 || cell.mode > 7)
+                throw std::invalid_argument("Invalid TMS9918 background fetch state.");
         state_ = state;
     }
 
