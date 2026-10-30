@@ -4,6 +4,11 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Corrigida a inicialização de The Castle (Japan): reconhecimento pelo tamanho e
+  CRC-32 e suporte aos 8 KiB de RAM do cartucho em `8000–9FFF`, separados da RAM
+  interna do SG-1000. Testes cobrem limites, ROM espelhada, isolamento da memória,
+  reset e execução da CPU usando a RAM adicional.
+
 - Seleção de ROM com carga imediata ao clicar, identificação pela extensão
   SG/SC/SMS/GG sem distinção de maiúsculas e remoção da etapa de confirmação.
 - Drag-and-drop e caminhos de arquivo também carregam diretamente; falhas
