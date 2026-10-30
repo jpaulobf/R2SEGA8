@@ -111,7 +111,17 @@ namespace R2SEGA8::Window
         }
         // Encaminha ações e consultas ao seletor, sem inicializar recursos nativos.
         explicit Impl(Callbacks handlers, DisplaySize size)
-            : callbacks(std::move(handlers)), files(callbacks.openRom), nativeSize(size)
+            : callbacks(std::move(handlers)),
+              files([this](const std::filesystem::path &path, Common::SystemType type)
+                    {
+                        if (!callbacks.openRom)
+                            throw std::runtime_error("ROM loading callback is not configured.");
+                        const auto title = std::string("R2SEGA8 | ") + path.filename().u8string();
+                        callbacks.openRom(path, type);
+                        // Atualiza somente após a aplicação confirmar o carregamento sem lançar exceção.
+                        SDL_SetWindowTitle(window, title.c_str());
+                    }),
+              nativeSize(size)
         {
             const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max() / 10);
             if (!size.width || !size.height || size.width > limit || size.height > limit)
