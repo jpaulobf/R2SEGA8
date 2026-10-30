@@ -8,7 +8,7 @@ A Sega SG-1000, SC-3000, Master System and Game Gear emulator written from
 scratch in C++, developed alongside R2NES / R2BOY.
 
 The project is in early development. You can load ROMs, inspect memory and
-run the SG-1000 CPU with background video output. Video support is
+run the SG-1000 CPU with backgrounds and sprites. Video support is
 incomplete, and audio and controls are still being developed; games are not
 fully supported yet.
 
