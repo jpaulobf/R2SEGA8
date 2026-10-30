@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/Buttons.h"
+#include "Common/AudioSettings.h"
 #include "Core/CPU/Z80/Z80.h"
 #include "Core/Cartridge/Cartridge.h"
 #include "Core/VideoFrame.h"
@@ -35,8 +36,17 @@ namespace R2SEGA8::Systems
         // Retorna zero enquanto a máquina não oferecer um perfil de execução.
         virtual unsigned clockFrequency() const { return 0; }
 
+        // Retorna a quantidade de T-states por quadro completo; zero indica ausência de temporização de vídeo.
+        virtual unsigned cyclesPerFrame() const { return 0; }
+
         // Consulta o último quadro completo; placas sem vídeo implementado retornam uma consulta vazia.
         virtual Core::VideoFrame videoFrame() const { return {}; }
+
+        // Transfere PCM mono float a 48 kHz; placas sem áudio limpam o destino.
+        virtual void takeAudio(std::vector<float> &samples) { samples.clear(); }
+
+        // Recebe ajustes de apresentação; placas sem mixer implementado ignoram a atualização.
+        virtual void setAudioSettings(const Common::AudioSettings &) {}
 
         // Recebe intenções lógicas do jogador; placas sem controles implementados ignoram a atualização.
         virtual void setButtons(unsigned, Common::ButtonMask) {}
