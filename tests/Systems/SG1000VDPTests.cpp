@@ -116,14 +116,19 @@ namespace
     void mappingAndClock(const std::filesystem::path &path)
     {
         auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto halted = board->cpu().state();
+        halted.halted = true;
+        board->cpu().setState(halted);
         for (unsigned port = 0x80; port < 0xc0; port += 2)
         {
             board->output(static_cast<std::uint16_t>(0xa500 | (port + 1)), 0x34);
             board->output(static_cast<std::uint16_t>(0x5a00 | (port + 1)), 0x52);
             board->output(static_cast<std::uint16_t>(0x1200 | port), static_cast<Byte>(port));
+            board->runCycles(32);
             check(board->vdp().state().vram[0x1234] == port, "Mirrored VDP writes ignore upper I/O address bits");
             board->output(0xbf, 0x34);
             board->output(0x81, 0x12);
+            board->runCycles(32);
             check(board->input(static_cast<std::uint16_t>(0xfe00 | port)) == port, "Mirrored VDP data reads");
         }
         const auto address = board->vdp().state().address;
@@ -131,6 +136,7 @@ namespace
         board->output(0xc1, 0x55);
         check(board->input(0xdc) == 0xff && board->input(0x7e) == 0xff && board->vdp().state().address == address,
               "Unimplemented devices do not alias VDP ports");
+        board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
         auto s = board->cpu().state();
         s.halted = true;
         board->cpu().setState(s);
@@ -173,6 +179,93 @@ namespace
                                                              : std::array<Byte, 4>{84, 85, 237, 255};
                 for (unsigned c = 0; c < 4; ++c)
                     check(frame.rgba[(y * 256 + x) * 4 + c] == expected[c], "CPU-driven Graphics I frame differs from expected pixels");
+            }
+    }
+
+    // Compara uma transferência OTIR rápida demais com uma rotina espaçada, executadas pelo Z80 real.
+    void transferPacing()
+    {
+        for (bool safe : {false, true})
+        {
+            std::vector<Byte> rom(0x200, 0);
+            std::size_t pc = 0;
+            auto emit = [&](std::initializer_list<Byte> code)
+            {
+                for (auto byte : code)
+                    rom.at(pc++) = byte;
+            };
+            emit({0xf3, 0x31, 0, 0xc4, 0x3e, 0xc0, 0xd3, 0xbf, 0x3e, 0x81, 0xd3, 0xbf});
+            emit({0x3e, 0, 0xd3, 0xbf, 0x3e, 0x78, 0xd3, 0xbf}); // Endereço 3800, com imagem habilitada.
+            emit({0x21, 0, 1, 0x01, 0xbe, 64});
+            const auto loop = static_cast<Byte>(pc);
+            if (safe)
+                emit({0xed, 0xa3, 0x00, 0xc2, loop, 0}); // OUTI + NOP + JP NZ: 30 T-states entre bytes.
+            else
+                emit({0xed, 0xb3}); // OTIR: 21 T-states entre bytes, insuficientes em algumas fases.
+            for (unsigned i = 0; i < 32; ++i)
+                emit({0});
+            emit({0x3e, 1, 0x32, 1, 0xc0, 0x76, 0x18, 0xfd});
+            for (unsigned i = 0; i < 64; ++i)
+                rom[0x100 + i] = static_cast<Byte>(i + 1);
+            Fixture fixture(rom);
+            auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+            for (unsigned elapsed = 0; elapsed < 20000 && board->readMemory(0xc001) != 1; elapsed += 128)
+                board->runCycles(128);
+            check(board->readMemory(0xc001) == 1, "CPU transfer pacing ROM did not complete");
+            const auto &vram = board->vdp().state().vram;
+            if (safe)
+            {
+                for (unsigned i = 0; i < 64; ++i)
+                    check(vram[0x3800 + i] == i + 1, "Safely paced Z80 writes must all reach VRAM");
+            }
+            else
+            {
+                unsigned stored = 0;
+                while (stored < 64 && vram[0x3800 + stored])
+                    ++stored;
+                check(stored > 0 && stored < 64, "Too-fast Z80 writes must lose requests instead of bypassing arbitration");
+            }
+            check(board->vdp().state().masterTicks == board->cpu().state().cycles * 3,
+                  "VRAM contention must not invent CPU clocks or automatic WAIT states");
+        }
+    }
+
+    // Confere os pixels anteriores e posteriores a duas escritas de R7 feitas pela CPU durante a imagem.
+    void rasterColors()
+    {
+        std::vector<Byte> rom(0x100, 0);
+        const Byte code[] = {0xf3, 0x31, 0, 0xc4, 0x3e, 4, 0xd3, 0xbf, 0x3e, 0x87, 0xd3, 0xbf, 0x06, 72,
+                             0x10, 0xfe, 0x3e, 6, 0xd3, 0xbf, 0x3e, 0x87, 0xd3, 0xbf, 0x76, 0x18, 0xfd};
+        std::copy(std::begin(code), std::end(code), rom.begin());
+        Fixture fixture(rom);
+        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        std::array<unsigned, 2> changes{};
+        unsigned count = 0;
+        for (unsigned ticks = 0; ticks < 50000 && board->videoFrame().number == 0; ++ticks)
+        {
+            const auto &before = board->vdp().state();
+            const unsigned position = before.line * VDP::DotsPerLine + before.dot;
+            const auto color = before.registers[7];
+            board->runCycles(1);
+            if (board->vdp().state().registers[7] != color)
+            {
+                check(count < changes.size() && position % VDP::DotsPerLine < VDP::Width,
+                      "Raster ROM changed color outside its expected visible dot");
+                changes[count++] = position;
+            }
+        }
+        check(count == 2 && board->videoFrame().number == 1, "Raster ROM did not produce both register changes and a complete frame");
+        const auto frame = board->videoFrame();
+        for (unsigned y = 0; y < 192; ++y)
+            for (unsigned x = 0; x < 256; ++x)
+            {
+                const unsigned position = y * VDP::DotsPerLine + x;
+                const std::array<Byte, 3> expected = position < changes[0]   ? std::array<Byte, 3>{0, 0, 0}
+                                                     : position < changes[1] ? std::array<Byte, 3>{84, 85, 237}
+                                                                             : std::array<Byte, 3>{212, 82, 77};
+                const auto *pixel = frame.rgba + y * frame.pitch + x * 4;
+                check(pixel[0] == expected[0] && pixel[1] == expected[1] && pixel[2] == expected[2] && pixel[3] == 255,
+                      "CPU register write must affect the next raster dot without redrawing earlier pixels");
             }
     }
 
@@ -344,6 +437,8 @@ int main(int argc, char **argv)
         const auto rom = demoROM();
         Fixture fixture(rom);
         mappingAndClock(fixture.path);
+        transferPacing();
+        rasterColors();
         auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
         validateDemo(*board);
         if (argc == 2)

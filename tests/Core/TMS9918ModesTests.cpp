@@ -24,14 +24,23 @@ namespace
         vdp.writeControl(static_cast<Byte>(0x80 | index));
     }
 
-    // Escreve um bloco na VRAM pela porta de dados, com incremento automático.
+    // Prepara a VRAM da cena por snapshot; os testes de arbitragem validam as portas separadamente.
     template <class Data>
     void upload(VDP &vdp, unsigned address, const Data &bytes)
     {
-        vdp.writeControl(static_cast<Byte>(address));
-        vdp.writeControl(static_cast<Byte>(0x40 | (address >> 8)));
+        auto state = std::make_unique<VDP::State>(vdp.state());
         for (auto value : bytes)
-            vdp.writeData(value);
+            state->vram[(address++) & 0x3fff] = value;
+        vdp.restore(*state);
+    }
+
+    // Alinha o raster e percorre um quadro completo, incluindo as buscas anteriores ao primeiro pixel.
+    void present(VDP &vdp)
+    {
+        while (vdp.state().line || vdp.state().dot || vdp.state().masterPhase)
+            vdp.tick();
+        vdp.runMasterTicks(VDP::MasterTicksPerFrame);
+        vdp.runMasterTicks(VDP::MasterTicksPerFrame);
     }
 
     // Confere a cor de um pixel RGBA usando a paleta de apresentação adotada pelo projeto.
@@ -77,7 +86,7 @@ namespace
             {
                 reg(*vdp, 4, patternMask);
                 reg(*vdp, 3, 0x9f | (colorMask << 5));
-                vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+                present(*vdp);
                 const auto frame = vdp->frame();
                 check(vdp->interrupt(), "Graphics II keeps NTSC interrupt timing");
                 vdp->readStatus();
@@ -96,7 +105,7 @@ namespace
         upload(*vdp, 0x2000, patterns);
         reg(*vdp, 3, 0x7f);
         reg(*vdp, 4, 7);
-        vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+        present(*vdp);
         for (unsigned y = 0; y < 192; ++y)
             for (unsigned x = 0; x < 256; ++x)
             {
@@ -135,7 +144,7 @@ namespace
         for (unsigned row = 0; row < 8; ++row)
             colors[row] = 0xf2;
         upload(*vdp, 0x2000, colors);
-        vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+        present(*vdp);
         for (unsigned y = 0; y < 192; ++y)
             for (unsigned x = 0; x < 256; ++x)
             {
@@ -168,7 +177,7 @@ namespace
                 patterns[name * 8 + row] = static_cast<Byte>(((name * 37) ^ (row * 19)) | 3);
         upload(*vdp, 0x3c00, names);
         upload(*vdp, 0x1800, patterns);
-        vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+        present(*vdp);
         for (unsigned y = 0; y < 192; ++y)
             for (unsigned x = 0; x < 256; ++x)
             {
@@ -184,12 +193,12 @@ namespace
                 pixel(vdp->frame(), x, y, color);
             }
         reg(*vdp, 7, 4);
-        vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+        present(*vdp);
         for (unsigned y = 0; y < 192; ++y)
             for (unsigned x = 0; x < 256; ++x)
                 pixel(vdp->frame(), x, y, 4);
         reg(*vdp, 7, 0xf0);
-        vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+        present(*vdp);
         pixel(vdp->frame(), 0, 0, 0);
         pixel(vdp->frame(), 255, 191, 0);
         check(vdp->interrupt(), "Text preserves VBlank/INT independently of background colors");
@@ -217,7 +226,7 @@ namespace
                 patterns[name * 8 + row] = static_cast<Byte>(((name + row) % 16 << 4) | ((name * 3 + row * 5 + 1) % 16));
         upload(*vdp, 0x1800, names);
         upload(*vdp, 0x0800, patterns);
-        vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+        present(*vdp);
         for (unsigned y = 0; y < 192; ++y)
             for (unsigned x = 0; x < 256; ++x)
             {
@@ -238,7 +247,7 @@ namespace
         check(vdp->state().images == expected->images && vdp->state().dot == expected->dot && vdp->state().line == expected->line,
               "Mid-cell snapshot did not preserve the multicolor latch and pixel phase");
     }
-} // namespace
+}
 
 int main()
 {

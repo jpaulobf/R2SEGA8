@@ -88,6 +88,54 @@ int main()
                   "SG RAM must mirror through FFFF");
         board->writeMemory(0, 0x99);
         check(board->readMemory(0) == bytes[0], "Writes must not change ROM");
+
+        // O perfil depende do conteúdo catalogado, nunca apenas do nome ou dos 32 KiB de tamanho.
+        std::vector<std::uint8_t> castleBytes(bytes.begin(), bytes.begin() + 0x8000);
+        const auto castlePath = fixtures.write("Castle, The (Japan).sg", castleBytes);
+        auto plain32 = Systems::createBoard(SystemType::SG1000, Core::Cartridge(castlePath));
+        check(plain32->cartridge().profile() == Core::CartridgeProfile::PlainROM && plain32->cartridge().ram().empty(),
+              "Filename/size must not enable cartridge RAM");
+        plain32->writeMemory(0x8000, 0x42);
+        check(plain32->readMemory(0x8000) == 0xff, "Unknown 32 KiB ROM acquired writable memory");
+
+        // ROM sintética: o perfil explícito exercita o hardware sem distribuir o jogo comercial.
+        auto castle = Systems::createBoard(SystemType::SG1000, Core::Cartridge(castlePath, Core::CartridgeProfile::CastleRAM));
+        check(castle->ram().size() == 1024 && castle->cartridge().ram().size() == 8192, "Separate internal and cartridge RAM");
+        check(std::all_of(castle->cartridge().ram().begin(), castle->cartridge().ram().end(), [](auto v)
+                          { return v == 0; }),
+              "Cartridge RAM power-on convention");
+        for (unsigned i = 0; i < 8192; ++i)
+            castle->writeMemory(static_cast<std::uint16_t>(0x8000 + i), static_cast<std::uint8_t>(i * 7 + i / 256));
+        for (unsigned i = 0; i < 8192; ++i)
+            check(castle->readMemory(static_cast<std::uint16_t>(0x8000 + i)) == static_cast<std::uint8_t>(i * 7 + i / 256),
+                  "All 8 KiB of cartridge RAM must be independently addressable");
+        castle->writeMemory(0x7fff, 0x77);
+        castle->writeMemory(0xa000, 0x77);
+        castle->writeMemory(0xbfff, 0x77);
+        check(castle->readMemory(0x7fff) == castleBytes[0x7fff] && castle->readMemory(0xa000) == castleBytes[0x2000] &&
+                  castle->readMemory(0xbfff) == castleBytes[0x3fff] && castle->cartridge().rom() == castleBytes,
+              "Castle ROM boundaries/mirror must remain read-only");
+        castle->writeMemory(0xc000, 0x53);
+        check(castle->readMemory(0xfc00) == 0x53 && castle->readMemory(0x8000) == 0 && castle->readMemory(0x8400) == 4,
+              "Internal RAM must not alias cartridge RAM");
+        castle->cpu().reset();
+        check(castle->readMemory(0xc000) == 0x53 && castle->readMemory(0x9fff) == static_cast<std::uint8_t>(8191 * 7 + 31),
+              "CPU reset must preserve cartridge RAM");
+        auto freshCastle = Systems::createBoard(SystemType::SG1000, Core::Cartridge(castlePath, Core::CartridgeProfile::CastleRAM));
+        check(freshCastle->readMemory(0x9fff) == 0, "Reload must create a separate cartridge RAM allocation");
+        rejects([&]
+                { Core::Cartridge invalid(sgPath, Core::CartridgeProfile::CastleRAM); }, "Castle profile accepted a non-32 KiB ROM");
+
+        // A CPU deve buscar instruções e usar a pilha na RAM do cartucho pelo barramento real.
+        std::vector<std::uint8_t> ramProgram(0x8000);
+        const std::vector<std::uint8_t> code = {0x31, 0x00, 0xa0, 0x21, 0x76, 0x00, 0xe5, 0xd1, 0x7b, 0x32, 0x00, 0x80, 0xc3, 0x00, 0x80};
+        std::copy(code.begin(), code.end(), ramProgram.begin());
+        auto ramCPU = Systems::createBoard(
+            SystemType::SG1000, Core::Cartridge(fixtures.write("cart-ram-program.sg", ramProgram), Core::CartridgeProfile::CastleRAM));
+        ramCPU->runCycles(200);
+        check(ramCPU->cpu().state().halted && ramCPU->cpu().state().pc == 0x8001 && ramCPU->readMemory(0x8000) == 0x76 &&
+                  ramCPU->cpu().state().e == 0x76 && ramCPU->cpu().state().sp == 0xa000,
+              "CPU stack, writes and instruction fetch must use cartridge RAM");
         auto *previous = board.get();
         rejects([&]
                 { board = Systems::createBoard(SystemType::Unknown, Core::Cartridge(sgPath)); }, "Unknown system accepted");

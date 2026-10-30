@@ -30,6 +30,30 @@ namespace
         vdp.writeControl(static_cast<std::uint8_t>(0x80 | index));
     }
 
+    // Aguarda o slot real sem adicionar clocks à implementação das portas.
+    void flush(VDP &vdp)
+    {
+        unsigned ticks = 0;
+        while (vdp.state().cpuAccessPending && ticks++ < 100)
+            vdp.tick();
+        check(!vdp.state().cpuAccessPending, "Pending VRAM access did not receive a slot");
+    }
+
+    // Envia um byte e aguarda a execução física da escrita.
+    void write(VDP &vdp, std::uint8_t value)
+    {
+        vdp.writeData(value);
+        flush(vdp);
+    }
+
+    // Retorna o buffer anterior e aguarda a próxima pré-busca.
+    std::uint8_t read(VDP &vdp)
+    {
+        const auto value = vdp.readData();
+        flush(vdp);
+        return value;
+    }
+
     // Verifica o protocolo da CPU, incremento, pré-busca, cancelamento e reset.
     void ports()
     {
@@ -42,17 +66,18 @@ namespace
             check(vdp.state().registers[i] == i * 29, "Register write protocol");
         }
         address(vdp, 0x3fff, true);
-        vdp.writeData(0xa5);
-        vdp.writeData(0x5a);
+        write(vdp, 0xa5);
+        write(vdp, 0x5a);
         check(vdp.state().address == 1 && vdp.state().vram[0x3fff] == 0xa5 && vdp.state().vram[0] == 0x5a,
               "14-bit VRAM address wraps during writes");
         address(vdp, 0x3fff, false);
+        flush(vdp);
         check(vdp.state().address == 0 && vdp.state().readBuffer == 0xa5, "Read setup performs prefetch");
-        check(vdp.readData() == 0xa5 && vdp.state().address == 1 && vdp.readData() == 0x5a,
+        check(read(vdp) == 0xa5 && vdp.state().address == 1 && read(vdp) == 0x5a,
               "Read buffer and sequential prefetch wrap");
         address(vdp, 0x2000, true);
-        vdp.writeData(0x91);
-        check(vdp.readData() == 0x91, "Data write updates the CPU-visible read buffer");
+        write(vdp, 0x91);
+        check(read(vdp) == 0x91, "Data write updates the CPU-visible read buffer");
 
         vdp.writeControl(0x33);
         vdp.readStatus();
@@ -60,11 +85,11 @@ namespace
         check(vdp.state().registers[7] == 4 && !vdp.state().secondControlByte, "Status cancels half a control word");
         address(vdp, 0x1200, true);
         vdp.writeControl(0x45);
-        vdp.writeData(0x82);
+        write(vdp, 0x82);
         check(vdp.state().vram[0x1245] == 0x82 && !vdp.state().secondControlByte,
               "First control byte changes address low byte; data write cancels control latch");
         vdp.writeControl(0x67);
-        vdp.readData();
+        read(vdp);
         reg(vdp, 6, 3);
         check(vdp.state().registers[6] == 3, "Data read cancels half a control word");
         vdp.reset();
@@ -73,10 +98,11 @@ namespace
               "Reset preserves VRAM and resets controller");
         address(vdp, 0, true);
         for (unsigned i = 0; i < 0x4000; ++i)
-            vdp.writeData(static_cast<std::uint8_t>(i * 13 + i / 256));
+            write(vdp, static_cast<std::uint8_t>(i * 13 + i / 256));
         address(vdp, 0, false);
+        flush(vdp);
         for (unsigned i = 0; i < 0x4000; ++i)
-            check(vdp.readData() == static_cast<std::uint8_t>(i * 13 + i / 256), "Complete 16 KiB sequential port round-trip");
+            check(read(vdp) == static_cast<std::uint8_t>(i * 13 + i / 256), "Complete 16 KiB sequential port round-trip");
     }
 
     // Confere a fronteira exata do VBlank, o nível de INT e a publicação de quadros.
@@ -122,25 +148,28 @@ namespace
         reg(vdp, 7, 4);
         reg(vdp, 5, 0x7f);
         address(vdp, 0x3f80, true);
-        vdp.writeData(0xd0);
+        write(vdp, 0xd0);
         address(vdp, 0x1800, true);
         for (unsigned y = 0; y < 24; ++y)
             for (unsigned x = 0; x < 32; ++x)
-                vdp.writeData(static_cast<std::uint8_t>((x + y) % 2 ? 8 : 0));
+                write(vdp, static_cast<std::uint8_t>((x + y) % 2 ? 8 : 0));
         address(vdp, 0x0800, true);
         for (unsigned row = 0; row < 8; ++row)
-            vdp.writeData(static_cast<std::uint8_t>(0x80 >> row));
+            write(vdp, static_cast<std::uint8_t>(0x80 >> row));
         address(vdp, 0x0840, true);
         for (unsigned row = 0; row < 8; ++row)
-            vdp.writeData(0xff);
+            write(vdp, 0xff);
         address(vdp, 0x2000, true);
-        vdp.writeData(0x20);
-        vdp.writeData(0xf1);
+        write(vdp, 0x20);
+        write(vdp, 0xf1);
+        while (vdp.state().line || vdp.state().dot || vdp.state().masterPhase)
+            vdp.tick();
+        vdp.runMasterTicks(VDP::MasterTicksPerFrame);
         const auto before = vdp.frame();
-        check(before.rgba[0] == 0 && before.rgba[3] == 255, "Unfinished image is not presented");
+        check(before.rgba[3] == 255, "Published image is opaque");
         vdp.runMasterTicks(VDP::Height * VDP::MasterTicksPerLine);
         const auto frame = vdp.frame();
-        check(frame.width == 256 && frame.height == 192 && frame.pitch == 1024 && frame.number == 1, "Presentation frame metadata");
+        check(frame.width == 256 && frame.height == 192 && frame.pitch == 1024 && frame.number == before.number + 1, "Presentation frame metadata");
         for (unsigned y = 0; y < 192; ++y)
             for (unsigned x = 0; x < 256; ++x)
             {
@@ -155,12 +184,12 @@ namespace
         reg(vdp, 1, 0x80);
         reg(vdp, 7, 6);
         vdp.runMasterTicks(VDP::MasterTicksPerFrame - 1);
-        check(vdp.frame().number == 1 && vdp.frame().rgba[0] == 33, "Front image remains stable until publication");
+        check(vdp.frame().number == frame.number && vdp.frame().rgba[0] == 33, "Front image remains stable until publication");
         vdp.tick();
-        check(vdp.frame().number == 2 && vdp.frame().rgba[0] == 212 && vdp.frame().rgba[1] == 82 && vdp.frame().rgba[2] == 77,
+        check(vdp.frame().number == frame.number + 1 && vdp.frame().rgba[0] == 212 && vdp.frame().rgba[1] == 82 && vdp.frame().rgba[2] == 77,
               "Display disable renders backdrop while timing continues");
         vdp.restore(*saved);
-        check(vdp.frame().number == 1 && vdp.frame().rgba[0] == 33, "Restore includes front/back images");
+        check(vdp.frame().number == frame.number && vdp.frame().rgba[0] == 33, "Restore includes front/back images");
         reg(vdp, 0, 2);
         reg(vdp, 1, 0xd0);
         reg(vdp, 7, 6);

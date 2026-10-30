@@ -24,13 +24,13 @@ namespace
         vdp.writeControl(static_cast<Byte>(0x80 | index));
     }
 
-    // Envia bytes para a VRAM sem alterar diretamente o estado interno.
+    // Prepara os bytes da cena por snapshot, isolando a renderização do protocolo de portas.
     void upload(VDP &vdp, unsigned address, std::initializer_list<Byte> data)
     {
-        vdp.writeControl(static_cast<Byte>(address));
-        vdp.writeControl(static_cast<Byte>(0x40 | (address >> 8)));
+        auto state = std::make_unique<VDP::State>(vdp.state());
         for (auto byte : data)
-            vdp.writeData(byte);
+            state->vram[(address++) & 0x3fff] = byte;
+        vdp.restore(*state);
     }
 
     // Cria uma cena azul e testa também os bits ignorados dos registradores de base.
@@ -271,22 +271,23 @@ namespace
     // Confere os 32 sprites sem limite e preserva o comportamento original quando o limite está ligado.
     void unlimited()
     {
-        for (bool limited : {true, false})
+        for (bool unlimited : {false, true})
         {
             auto vdp = scene();
-            vdp->setSpriteLimit(limited);
+            check(!vdp->state().spriteUnlimited, "Hardware sprite limit is the default");
+            vdp->setSpriteUnlimited(unlimited);
             solid(*vdp);
             for (unsigned i = 0; i < 32; ++i)
                 sprite(*vdp, i, 0xff, static_cast<Byte>(i * 8), 0, 15);
             warm(*vdp);
             vdp->runMasterTicks(VDP::Height * VDP::MasterTicksPerLine);
             for (unsigned x = 0; x < 256; ++x)
-                pixel(*vdp, x, 0, !limited || x < 32 ? 1 : 0);
+                pixel(*vdp, x, 0, unlimited || x < 32 ? 1 : 0);
             check((vdp->state().status & 0x7f) == 0x44, "Fifth-sprite flag/index remain available in unlimited mode");
             const auto saved = std::make_unique<VDP::State>(vdp->state());
-            vdp->setSpriteLimit(!limited);
+            vdp->setSpriteUnlimited(!unlimited);
             vdp->restore(*saved);
-            check(vdp->state().limitSpritesPerLine == limited, "Snapshot preserves the sprite limit option");
+            check(vdp->state().spriteUnlimited == unlimited, "Snapshot preserves the sprite limit option");
         }
     }
 
@@ -314,7 +315,7 @@ namespace
 
         // A fase intermediária dos atributos também faz parte do snapshot.
         vdp = scene(3);
-        vdp->setSpriteLimit(false);
+        vdp->setSpriteUnlimited(true);
         for (unsigned i = 0; i < 32; ++i)
             sprite(*vdp, i, 0xff, static_cast<Byte>(i * 4), 0, static_cast<Byte>(i % 15 + 1));
         solid(*vdp);
@@ -334,7 +335,7 @@ namespace
                   "Resume in a sprite fetch must preserve the frame and flags");
         }
     }
-} // namespace
+}
 
 int main()
 {
