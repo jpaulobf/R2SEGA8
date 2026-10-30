@@ -20,7 +20,8 @@ int R2SEGA8::Systems::Engine::run()
         std::unique_ptr<R2SEGA8::Systems::Board> board;
         using Clock = std::chrono::steady_clock;
         R2SEGA8::Systems::FramePacer pacer;
-        bool running = true, inputEnabled = false;
+        bool running = true;
+        bool inputEnabled = false;
         bool resetAudio = false;
         R2SEGA8::Common::AudioSettings audioSettings;
         R2SEGA8::Systems::Input input;
