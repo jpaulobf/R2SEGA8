@@ -4,6 +4,25 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Corrigidas pausas artificiais de áudio causadas por tratar a fila de entrada
+  vazia da SDL como underrun e reiniciar repetidamente a preparação de 40 ms.
+- Engine passa a usar 59.736 T-states por quadro NTSC do SG-1000, equivalentes
+  a 59,922743 Hz, com prazos racionais e recuperação limitada de pequenos atrasos.
+- Reduzido o trabalho repetido do mixer/amostrador sem mudar o PCM de Wonder Boy
+  na comparação offline de dez segundos.
+
+- File > Reset (F12) reinicia a máquina com a ROM carregada e preserva os ajustes
+  de áudio; File > Unload libera a máquina, limpa áudio e restaura o título.
+
+- Menu Audio com ativação e volume de Master, Tone 1/2/3 e Noise, preservados
+  durante a sessão e nas trocas de ROM, sem alterar o estado do hardware emulado.
+
+- Áudio do SG-1000 com PSG SN76489AN: três tons, ruído periódico/branco,
+  atenuação de 2 dB, divisor zero da variante TI e READY ligado a WAIT da CPU.
+- Geração PCM mono a 48 kHz pelo clock emulado e reprodução SDL3, com fila
+  limitada, limpeza ao trocar a ROM e recuperação após esvaziamento.
+- Testes do PSG, integração CPU/VDP/PSG e reprodução com dispositivo SDL dummy.
+
 - Corrigida a inicialização de The Castle (Japan): reconhecimento pelo tamanho e
   CRC-32 e suporte aos 8 KiB de RAM do cartucho em `8000–9FFF`, separados da RAM
   interna do SG-1000. Testes cobrem limites, ROM espelhada, isolamento da memória,
