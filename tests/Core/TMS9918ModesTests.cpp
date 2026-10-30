@@ -46,6 +46,9 @@ namespace
     void graphicsII()
     {
         auto vdp = std::make_unique<VDP>();
+        // As cenas isolam o background encerrando explicitamente a tabela de sprites.
+        reg(*vdp, 5, 0x7f);
+        upload(*vdp, 0x3f80, std::array<Byte, 1>{0xd0});
         reg(*vdp, 0, 2);
         reg(*vdp, 1, 0xe0);
         reg(*vdp, 2, 6);
@@ -107,6 +110,9 @@ namespace
     void graphicsIIMaskedNames()
     {
         auto vdp = std::make_unique<VDP>();
+        // As cenas isolam o background encerrando explicitamente a tabela de sprites.
+        reg(*vdp, 5, 0x7f);
+        upload(*vdp, 0x3f80, std::array<Byte, 1>{0xd0});
         reg(*vdp, 0, 2);
         reg(*vdp, 1, 0xc0);
         reg(*vdp, 2, 6);
@@ -144,6 +150,9 @@ namespace
     void text()
     {
         auto vdp = std::make_unique<VDP>();
+        // As cenas isolam o background encerrando explicitamente a tabela de sprites.
+        reg(*vdp, 5, 0x7f);
+        upload(*vdp, 0x3f80, std::array<Byte, 1>{0xd0});
         reg(*vdp, 0, 0);
         reg(*vdp, 1, 0xf0);
         reg(*vdp, 2, 15);
@@ -190,6 +199,9 @@ namespace
     void multicolor()
     {
         auto vdp = std::make_unique<VDP>();
+        // As cenas isolam o background encerrando explicitamente a tabela de sprites.
+        reg(*vdp, 5, 0x7f);
+        upload(*vdp, 0x3f80, std::array<Byte, 1>{0xd0});
         reg(*vdp, 1, 0xe8);
         reg(*vdp, 2, 6);
         reg(*vdp, 3, 0xff);

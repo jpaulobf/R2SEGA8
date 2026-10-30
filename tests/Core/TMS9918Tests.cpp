@@ -120,6 +120,9 @@ namespace
         reg(vdp, 3, 0x80);
         reg(vdp, 4, 1);
         reg(vdp, 7, 4);
+        reg(vdp, 5, 0x7f);
+        address(vdp, 0x3f80, true);
+        vdp.writeData(0xd0);
         address(vdp, 0x1800, true);
         for (unsigned y = 0; y < 24; ++y)
             for (unsigned x = 0; x < 32; ++x)

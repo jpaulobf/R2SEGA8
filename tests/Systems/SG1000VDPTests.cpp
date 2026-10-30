@@ -65,7 +65,7 @@ namespace
         address(0x2000);
         emit({0x21, 0x48, 0x13, 0x01, 0xbe, 2, 0xed, 0xb3});
         address(0x1b00);
-        out(0xd0, 0xbe);    // Terminador de sprites para quando esse recurso for implementado.
+        out(0xd0, 0xbe);    // Encerra a tabela para isolar esta demonstração de background.
         emit({0xdb, 0xbf}); // Limpa uma possível flag de quadro acumulada durante a inicialização.
         reg(1, 0xe0);
         emit({0xfb, 0x76, 0x18, 0xfd});
@@ -213,9 +213,27 @@ namespace
         else
             std::copy_n(mode == 1 ? glyph : blocks, 8, vram.begin());
         vram[0x3b00] = 0xd0;
+        if (mode == 8)
+        {
+            vram.fill(0);
+            // Trinta e dois sprites 16x16 ampliados: oito por faixa, somente quatro visíveis por linha.
+            constexpr Byte spriteColors[] = {2, 15, 6, 10, 3, 8, 12, 14};
+            for (unsigned index = 0; index < 32; ++index)
+            {
+                const unsigned entry = 0x3b00 + index * 4;
+                vram[entry] = static_cast<Byte>(31 + (index / 8) * 40);
+                vram[entry + 1] = static_cast<Byte>(16 + (index % 8) * 28);
+                vram[entry + 2] = 3; // SIZE=1 deve selecionar o padrão alinhado zero.
+                vram[entry + 3] = spriteColors[index % 8];
+            }
+            for (unsigned y = 0; y < 16; ++y)
+                for (unsigned x = 0; x < 16; ++x)
+                    if (x == 0 || x == 15 || y == 0 || y == 15 || x == y || x + y == 15)
+                        vram[0x2800 + (x / 8) * 16 + y] |= static_cast<Byte>(0x80 >> (x % 8));
+        }
         std::vector<Byte> rom(0x5000, 0);
         const Byte boot[] = {0xf3, 0x31, 0, 0xc4, 0xed, 0x56, 0xc3, 0x80, 0};
-        const Byte isr[] = {0xf5, 0xdb, 0xbf, 0x3a, 0, 0xc0, 0x3c, 0x32, 0, 0xc0, 0xf1, 0xfb, 0xed, 0x4d};
+        const Byte isr[] = {0xf5, 0xdb, 0xbf, 0x32, 2, 0xc0, 0x3a, 0, 0xc0, 0x3c, 0x32, 0, 0xc0, 0xf1, 0xfb, 0xed, 0x4d};
         std::copy(std::begin(boot), std::end(boot), rom.begin());
         std::copy(std::begin(isr), std::end(isr), rom.begin() + 0x38);
         std::size_t pc = 0x80;
@@ -238,13 +256,14 @@ namespace
         setRegister(3, mode == 2 ? 0xff : 0x80);
         setRegister(4, mode == 2 ? 3 : 0);
         setRegister(5, 0x76);
-        setRegister(6, 0);
+        setRegister(6, mode == 8 ? 5 : 0);
         setRegister(7, mode == 1 ? 0xf4 : 4);
         out(0);
         out(0x40);
         emit({0x21, 0, 0x10, 0x0e, 0xbe, 0x16, 64, 0x06, 0, 0xed, 0xb3, 0x15, 0x20, 0xf9});
         emit({0xdb, 0xbf});
         setRegister(1, mode == 1 ? 0xf0 : mode == 4 ? 0xe8
+                                      : mode == 8   ? 0xe3
                                                     : 0xe0);
         emit({0x3e, 1, 0x32, 1, 0xc0, 0xfb, 0x76, 0x18, 0xfd});
         check(pc < 0x1000, "Background ROM code overlaps video data");
@@ -265,6 +284,8 @@ namespace
         check(board.videoFrame().number == initialFrame + 3 && static_cast<Byte>(board.readMemory(0xc000) - initialIRQ) == 3 &&
                   board.cpu().state().halted && !board.cpu().state().irq,
               "Background mode broke CPU/VBlank synchronization");
+        if (mode == 8)
+            check(board.readMemory(0xc002) == 0xe4, "Z80 ISR did not observe and acknowledge sprite collision/overflow/VBlank");
         constexpr Byte RGB[16][3] = {{0, 0, 0}, {0, 0, 0}, {33, 200, 66}, {94, 220, 120}, {84, 85, 237}, {125, 118, 252}, {212, 82, 77}, {66, 235, 245}, {252, 85, 84}, {255, 121, 120}, {212, 193, 84}, {230, 206, 128}, {33, 176, 59}, {201, 91, 186}, {204, 204, 204}, {255, 255, 255}};
         constexpr Byte glyph[8] = {0x78, 0x84, 0x84, 0xfc, 0x84, 0x84, 0x84, 0};
         constexpr Byte blocks[8] = {0x20, 0xf1, 0x64, 0x82, 0xa3, 0x5e, 0xc7, 0x9d};
@@ -284,6 +305,23 @@ namespace
                 {
                     if (x >= 6 && x < 246 && (glyph[y % 8] & (0x80 >> ((x - 6) % 6))))
                         color = 15;
+                }
+                else if (mode == 8)
+                {
+                    constexpr unsigned spriteColors[] = {2, 15, 6, 10};
+                    if (y >= 32 && y < 184 && (y - 32) % 40 < 32)
+                        for (unsigned column = 0; column < 4; ++column)
+                        {
+                            const unsigned left = 16 + column * 28;
+                            if (x < left || x >= left + 32)
+                                continue;
+                            const unsigned u = (x - left) / 2, v = ((y - 32) % 40) / 2;
+                            if (u == 0 || u == 15 || v == 0 || v == 15 || u == v || u + v == 15)
+                            {
+                                color = spriteColors[column];
+                                break;
+                            }
+                        }
                 }
                 else
                 {
@@ -310,7 +348,7 @@ int main(int argc, char **argv)
         validateDemo(*board);
         if (argc == 2)
             exportDemo(std::filesystem::u8path(argv[1]), rom, *board);
-        for (unsigned mode : {2u, 1u, 4u})
+        for (unsigned mode : {2u, 1u, 4u, 8u})
         {
             const auto modeROM = backgroundROM(mode);
             Fixture modeFixture(modeROM);
@@ -320,9 +358,10 @@ int main(int argc, char **argv)
                 exportDemo(std::filesystem::u8path(argv[1]), modeROM, *modeBoard,
                            mode == 2   ? "graphics-ii"
                            : mode == 1 ? "text"
+                           : mode == 8 ? "sprites"
                                        : "multicolor");
         }
-        std::cout << "SG-1000 ports, CPU/VDP clock, INT and Z80 demos for all four backgrounds passed.\n";
+        std::cout << "SG-1000 ports, CPU/VDP clock, INT and Z80 demos for all four backgrounds and sprites passed.\n";
         return 0;
     }
     catch (const std::exception &error)
