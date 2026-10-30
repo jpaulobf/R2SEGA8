@@ -8,6 +8,14 @@
 
 namespace R2SEGA8::Core
 {
+    // Perfis físicos conhecidos; Automatic identifica imagens catalogadas pelo conteúdo.
+    enum class CartridgeProfile
+    {
+        Automatic,
+        PlainROM,
+        CastleRAM
+    };
+
     // Campos do cabeçalho Sega encontrados na imagem, sem certificação de validade.
     struct SegaHeader
     {
@@ -23,7 +31,17 @@ namespace R2SEGA8::Core
     public:
         // Lê a ROM, normaliza seu caminho absoluto e procura sugestões por extensão
         // e cabeçalho. Propaga as exceções de acesso ao arquivo e leitura.
-        explicit Cartridge(const std::filesystem::path &path);
+        // O perfil explícito permite configurar cartuchos sem depender de seu nome de arquivo.
+        explicit Cartridge(const std::filesystem::path &path, CartridgeProfile profile = CartridgeProfile::Automatic);
+
+        // Retorna o perfil resolvido; Automatic nunca permanece após o carregamento.
+        CartridgeProfile profile() const { return profile_; }
+
+        // Expõe a RAM volátil do cartucho para inspeção, separada da RAM interna da placa.
+        const std::vector<std::uint8_t> &ram() const { return ram_; }
+
+        // Permite ao mapeador da placa atualizar a memória física do cartucho.
+        std::vector<std::uint8_t> &ram() { return ram_; }
 
         // Retorna o caminho absoluto normalizado do arquivo de origem.
         const std::filesystem::path &path() const { return path_; }
@@ -43,6 +61,8 @@ namespace R2SEGA8::Core
     private:
         std::filesystem::path path_;
         std::vector<std::uint8_t> rom_;
+        std::vector<std::uint8_t> ram_;
+        CartridgeProfile profile_ = CartridgeProfile::PlainROM;
         std::optional<SegaHeader> header_;
         Common::SystemType suggested_ = Common::SystemType::Unknown;
         bool conflicting_ = false;
