@@ -108,8 +108,8 @@ int main()
                   executing->readMemory(0xfc05) == 0x42,
               "SG program writes mirrored RAM through real CPU bus");
         check(executing->runCycles(5) == 5 && executing->cpu().state().cycles == 39, "HALT respects an exact T-state budget");
-        check(executing->input(0xbe) == 0xff, "Unconnected ports return FF");
-        executing->output(0xbe, 0x55);
+        check(executing->input(0xdc) == 0xff, "Unconnected controller ports return FF");
+        executing->output(0xdc, 0x55);
         executing->cpu().reset();
         check(executing->cpu().state().pc == 0 && executing->readMemory(0xc005) == 0x42, "CPU reset does not clear system RAM");
         check(std::all_of(smallBoard->ram().begin(), smallBoard->ram().end(), [](auto value)
