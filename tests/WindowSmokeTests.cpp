@@ -10,6 +10,28 @@
 #include <utility>
 #include <vector>
 
+namespace
+{
+    // Confirma que um quadro neutro chegou ao backend como textura com filtro de pixels.
+    bool hasVideoTexture(unsigned width, unsigned height)
+    {
+        const auto *data = ImGui::GetDrawData();
+        for (const auto *list : data->CmdLists)
+            for (const auto &command : list->CmdBuffer)
+            {
+                if (command.UserCallback || command.GetTexID() == ImTextureID_Invalid)
+                    continue;
+                auto *texture = reinterpret_cast<SDL_Texture *>(command.GetTexID());
+                float w = 0, h = 0;
+                SDL_ScaleMode filter;
+                if (SDL_GetTextureSize(texture, &w, &h) && w == width && h == height &&
+                    SDL_GetTextureScaleMode(texture, &filter) && filter == SDL_SCALEMODE_NEAREST)
+                    return true;
+            }
+        return false;
+    }
+}
+
 int main()
 {
     std::filesystem::path fixture;
@@ -27,6 +49,16 @@ int main()
             int loads = 0;
             int exits = 0, inspections = 0, memoryQueries = 0;
             bool rejectLoad = false;
+            bool frameEnabled = false;
+            unsigned frameWidth = 8, frameHeight = 8;
+            std::array<std::uint8_t, 8 * 8 * 4> pixels{};
+            for (std::size_t i = 0; i < pixels.size(); i += 4)
+            {
+                pixels[i] = 33;
+                pixels[i + 1] = 200;
+                pixels[i + 2] = 66;
+                pixels[i + 3] = 255;
+            }
             std::filesystem::path loadedPath;
             auto loadedType = R2SEGA8::Common::SystemType::Unknown;
             std::vector<std::uint8_t> rom;
@@ -47,6 +79,7 @@ int main()
                 loadedType = type;
                 rom.assign(8, 0x42);
                 ++loads;
+                frameEnabled = true;
             };
             callbacks.memory = [&]() -> R2SEGA8::Window::MemoryView
             {
@@ -55,6 +88,12 @@ int main()
             };
             callbacks.exit = [&]()
             { ++exits; };
+            callbacks.frame = [&]() -> R2SEGA8::Window::FrameView
+            {
+                if (!frameEnabled)
+                    return {};
+                return {pixels.data(), frameWidth, frameHeight, frameWidth * 4};
+            };
             R2SEGA8::Window::Window window(std::move(callbacks));
             window.open();
             if (!window.processEvents())
@@ -74,6 +113,19 @@ int main()
             window.render();
             if (loads != 1 || loadedPath != fixture || loadedType != R2SEGA8::Common::SystemType::SG1000 || !memoryQueries || inspections != 1)
                 throw std::runtime_error("Window did not route preview, load and presentation through callbacks");
+            window.render();
+            if (!hasVideoTexture(8, 8))
+                throw std::runtime_error("Frame callback did not produce a nearest-filtered presentation texture");
+            frameWidth = 16;
+            frameHeight = 4;
+            window.render();
+            if (!hasVideoTexture(16, 4))
+                throw std::runtime_error("Frame dimension change did not recreate presentation texture");
+            frameEnabled = false;
+            window.render();
+            if (hasVideoTexture(16, 4))
+                throw std::runtime_error("Empty frame callback displayed a stale video image");
+            frameEnabled = true;
             rejectLoad = true;
             window.requestOpen(fixture);
             window.render();
