@@ -2,8 +2,9 @@
 
 Alvos: SG-1000, SC-3000, Master System e Game Gear. A primeira entrega permite
 abrir e inspecionar ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
-executa por T-state no perfil inicial do SG-1000. VDP, áudio e controles
-ainda não estão implementados.
+executa por T-state no perfil inicial do SG-1000, junto do TMS9918 com
+os backgrounds Graphics I/II, Text e Multicolor e interrupção de VBlank.
+Sprites, áudio e controles ainda não estão implementados.
 
 ## Responsabilidades
 
@@ -40,7 +41,7 @@ ainda não estão implementados.
 - `Window` depende apenas de SDL3, ImGui, tipos compartilhados de `Common` e
   seu contrato de callbacks. Não inclui nem vincula `Core`, `Board` ou `Engine`.
 - A `Engine` registra callbacks para inspeção de ROM, carregamento, consulta
-  de memória e encerramento. A interface transmite caminho e seleção; somente
+  de memória, quadro de vídeo e encerramento. A interface transmite caminho e seleção; somente
   a `Engine` cria cartuchos e aciona a `Board`.
 - O Z80 acessa memória e portas por contratos do barramento. O mapa concreto
   pertence ao sistema emulado.
@@ -84,6 +85,11 @@ sem conhecer sua origem. O proprietário mantém esses bytes válidos durante
 a apresentação. A interface termina de usá-los antes de emitir ações que
 possam invalidá-los, como carregar outra ROM. Essa consulta evita copiar toda
 a ROM a cada quadro. `Window::render()` não recebe objetos da emulação.
+
+O vídeo segue o mesmo contrato: a `Board` oferece `Core::VideoFrame`, e a
+`Engine` o converte para `Window::FrameView` no callback `frame`. A janela
+copia os bytes RGBA para uma textura SDL e usa filtro nearest, sem incluir
+tipos do núcleo. A textura é atualizada antes das ações do seletor de ROMs.
 
 O teste da janela também usa callbacks com dados de apresentação e vincula
 somente a biblioteca de interface; seus cenários não precisam do núcleo.
@@ -132,9 +138,10 @@ e a organização de janela do R2BOY.
 ## Próximas etapas
 
 O contrato de barramento e o Z80 estão implementados e descritos em
-[Z80.md](Z80.md). A sequência seguinte é:
+[Z80.md](Z80.md). Os quatro modos de background do VDP e suas demonstrações
+estão em [TMS9918.md](TMS9918.md). A sequência seguinte é:
 
-1. Integrar TMS9918 e PSG ao SG-1000 pelo clock do barramento, começando com programas de teste.
+1. Implementar os sprites do TMS9918, refinar os acessos à VRAM e integrar PSG e controles.
 2. Apresentar vídeo e reproduzir áudio pela interface SDL3 existente.
 3. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
    específicos antes de anunciar suporte de execução.
