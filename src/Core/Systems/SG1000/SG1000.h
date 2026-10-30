@@ -2,9 +2,9 @@
 #include "Core/Audio/SN76489/SN76489.h"
 #include "Core/IO/Joypad.h"
 #include "Core/VDP/TMS9918/TMS9918.h"
-#include "Systems/Board.h"
+#include "Core/Board.h"
 
-namespace R2SEGA8::Systems
+namespace R2SEGA8::Core
 {
     // Representa o SG-1000 com ROM simples ou RAM de cartucho The Castle e 1 KiB de RAM interna espelhada.
     // Cartuchos com seleção de bancos ainda não são implementados.

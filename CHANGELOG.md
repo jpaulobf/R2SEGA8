@@ -4,6 +4,9 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Board e placas concretas dos consoles movidas para Core; seleção dos consoles
+  isolada em Systems/BoardFactory. SDL e suporte da Engine permanecem fora do Core.
+
 - Corrigidas pausas artificiais de áudio causadas por tratar a fila de entrada
   vazia da SDL como underrun e reiniciar repetidamente a preparação de 40 ms.
 - Engine passa a usar 59.736 T-states por quadro NTSC do SG-1000, equivalentes

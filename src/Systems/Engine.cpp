@@ -1,6 +1,6 @@
 #include "Engine.h"
 #include "Audio.h"
-#include "Board.h"
+#include "BoardFactory.h"
 #include "Core/Audio/SN76489/SN76489.h"
 #include "Input.h"
 #include "FramePacer.h"
@@ -17,7 +17,7 @@ int R2SEGA8::Systems::Engine::run()
 {
     try
     {
-        std::unique_ptr<R2SEGA8::Systems::Board> board;
+        std::unique_ptr<R2SEGA8::Core::Board> board;
         using Clock = std::chrono::steady_clock;
         R2SEGA8::Systems::FramePacer pacer;
         bool running = true;

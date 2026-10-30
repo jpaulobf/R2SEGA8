@@ -5,14 +5,13 @@
 #include "Core/CPU/Z80/Z80.h"
 #include "Core/Cartridge/Cartridge.h"
 #include "Core/VideoFrame.h"
-#include <memory>
 #include <vector>
 
-namespace R2SEGA8::Systems
+namespace R2SEGA8::Core
 {
     // Representa a placa da máquina, reunindo CPU, cartucho, RAM e o contrato do barramento.
     // Cada sistema concreto determina seu mapeamento e suas particularidades.
-    class Board : public Core::Z80Bus
+    class Board : public Z80Bus
     {
     public:
         // Permite destruir a máquina concreta por um ponteiro para a classe base.
@@ -25,10 +24,10 @@ namespace R2SEGA8::Systems
         Board &operator=(const Board &) = delete;
 
         // Expõe a CPU para execução controlada, interrupções e depuração.
-        Core::Z80 &cpu() { return cpu_; }
+        Z80 &cpu() { return cpu_; }
 
         // Expõe o estado da CPU sem permitir modificações.
-        const Core::Z80 &cpu() const { return cpu_; }
+        const Z80 &cpu() const { return cpu_; }
 
         // Executa exatamente o orçamento de T-states; exige mapa de memória implementado.
         std::uint64_t runCycles(std::uint64_t budget);
@@ -40,7 +39,7 @@ namespace R2SEGA8::Systems
         virtual unsigned cyclesPerFrame() const { return 0; }
 
         // Consulta o último quadro completo; placas sem vídeo implementado retornam uma consulta vazia.
-        virtual Core::VideoFrame videoFrame() const { return {}; }
+        virtual VideoFrame videoFrame() const { return {}; }
 
         // Transfere PCM mono float a 48 kHz; placas sem áudio limpam o destino.
         virtual void takeAudio(std::vector<float> &samples) { samples.clear(); }
@@ -68,7 +67,7 @@ namespace R2SEGA8::Systems
         Common::SystemType type() const { return type_; }
 
         // Expõe o cartucho da máquina para consulta, sem transferir sua posse.
-        const Core::Cartridge &cartridge() const { return cartridge_; }
+        const Cartridge &cartridge() const { return cartridge_; }
 
         // Expõe os bytes físicos da RAM interna, sem aplicar espelhamento de endereços.
         const std::vector<std::uint8_t> &ram() const { return ram_; }
@@ -86,17 +85,12 @@ namespace R2SEGA8::Systems
 
     protected:
         // Recebe o cartucho e aloca ramSize bytes de RAM interna, inicialmente zerados.
-        Board(Common::SystemType type, Core::Cartridge cartridge, std::size_t ramSize);
-        Core::Cartridge cartridge_;
+        Board(Common::SystemType type, Cartridge cartridge, std::size_t ramSize);
+        Cartridge cartridge_;
         std::vector<std::uint8_t> ram_;
 
     private:
         Common::SystemType type_;
-        Core::Z80 cpu_;
+        Z80 cpu_;
     };
-
-    // Constrói a máquina do tipo solicitado e transfere o cartucho para ela.
-    // Lança uma exceção para tipos desconhecidos ou perfis não suportados.
-    // O chamador só deve substituir a máquina ativa após a construção terminar.
-    std::unique_ptr<Board> createBoard(Common::SystemType type, Core::Cartridge cartridge);
 }

@@ -1,4 +1,4 @@
-#include "Systems/SG1000/SG1000.h"
+#include "Core/Systems/SG1000/SG1000.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -14,7 +14,7 @@ namespace
 {
     using Byte = std::uint8_t;
     using VDP = R2SEGA8::Core::TMS9918;
-    using Board = R2SEGA8::Systems::SG1000;
+    using Board = R2SEGA8::Core::SG1000;
 
     // Interrompe a validação com uma descrição do comportamento esperado.
     void check(bool condition, const char *message)

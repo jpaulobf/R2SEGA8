@@ -1,5 +1,5 @@
 #include "Systems/FramePacer.h"
-#include "Systems/SG1000/SG1000.h"
+#include "Core/Systems/SG1000/SG1000.h"
 #include <chrono>
 #include <cmath>
 #include <iostream>

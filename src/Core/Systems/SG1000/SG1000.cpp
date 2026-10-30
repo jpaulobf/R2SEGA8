@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace R2SEGA8::Systems
+namespace R2SEGA8::Core
 {
     SG1000::SG1000(Core::Cartridge cartridge) : Board(Common::SystemType::SG1000, std::move(cartridge), 1024)
     {

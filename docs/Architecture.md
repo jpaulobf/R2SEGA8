@@ -25,8 +25,10 @@ reprodução SDL3, sem participação da Window. Veja [áudio do SG-1000](SN7648
 | `src/Systems/Input.h/.cpp` | Adaptação de teclado/gamepads; a Engine encaminha os estados à placa. |
 | `src/Systems/Audio.h/.cpp` | Reprodução PCM via SDL3, com preparação e limite de fila. |
 | `src/Core/Timing` | Contagem de ciclos e ferramentas de sincronização. |
-| `src/Systems` | Composição de cada máquina, mapas de memória, portas, reset e configuração. |
-| `src/Systems/Board.h` | Contrato da placa emulada, reunindo CPU, cartucho, RAM e barramento. |
+| `src/Core/Systems` | Placas concretas dos consoles, mapas de memória, portas e conexão dos componentes emulados. |
+| `src/Systems` | Engine, fábrica de placas e suporte do computador: entrada SDL, reprodução de áudio e temporização. |
+| `src/Systems/BoardFactory.h/.cpp` | Seleção e construção das placas do Core, sem levar essa seleção para o contrato Board. |
+| `src/Core/Board.h` | Contrato da placa emulada, reunindo CPU, cartucho, RAM e barramento. |
 | `src/Systems/Engine.cpp` | Inicialização da aplicação e coordenação de eventos, carregamento, emulação e apresentação. |
 | `src/Emulator.cpp` | Ponto de entrada que instancia `Systems::Engine` e chama `run()`. |
 | `src/Window` | Sessão SDL3 e interface Dear ImGui, incluindo o seletor de arquivos. |
@@ -38,7 +40,9 @@ reprodução SDL3, sem participação da Window. Veja [áudio do SG-1000](SN7648
 
 - `Common` não depende de SDL3, ImGui, `Core` ou `Systems`.
 - `Core` utiliza `Common` e não depende de `Systems` ou SDL3.
-- As classes de máquinas em `Systems` utilizam `Core` e definem como os componentes se conectam.
+- As classes de máquinas em `Core/Systems` herdam `Core::Board` e definem como os componentes emulados se conectam.
+- `Systems::createBoard` pertence à fábrica de suporte, compilada separadamente em
+  `r2sega8_board_factory`; a biblioteca `r2sega8_core` não depende dessa fábrica.
 - `Systems::Engine::run()`, em `Engine.cpp`, coordena a sessão da aplicação e utiliza
   `Window` para processar eventos e apresentar a interface. Ele é compilado apenas
   com a aplicação gráfica; o núcleo permanece independente de SDL3 e ImGui.

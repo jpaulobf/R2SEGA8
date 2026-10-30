@@ -1,5 +1,5 @@
 #include "Core/IO/Joypad.h"
-#include "Systems/SG1000/SG1000.h"
+#include "Core/Systems/SG1000/SG1000.h"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -11,7 +11,7 @@
 
 namespace
 {
-    using Board = R2SEGA8::Systems::SG1000;
+    using Board = R2SEGA8::Core::SG1000;
     using VDP = R2SEGA8::Core::TMS9918;
     using R2SEGA8::Common::Button;
     using R2SEGA8::Common::mask;

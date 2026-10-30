@@ -16,11 +16,11 @@ add_library(r2sega8_core STATIC
     src/Core/VDP/TMS9918/TMS9918.cpp
     src/Common/RomFile.cpp
     src/Core/Cartridge/Cartridge.cpp
-    src/Systems/Board.cpp
-    src/Systems/SG1000/SG1000.cpp
-    src/Systems/SC3000/SC3000.cpp
-    src/Systems/MasterSystem/MasterSystem.cpp
-    src/Systems/GameGear/GameGear.cpp
+    src/Core/Board.cpp
+    src/Core/Systems/SG1000/SG1000.cpp
+    src/Core/Systems/SC3000/SC3000.cpp
+    src/Core/Systems/MasterSystem/MasterSystem.cpp
+    src/Core/Systems/GameGear/GameGear.cpp
 )
 target_compile_features(r2sega8_core PUBLIC cxx_std_17)
 target_include_directories(r2sega8_core PUBLIC src)
@@ -29,6 +29,9 @@ if(MSVC)
 else()
     target_compile_options(r2sega8_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+add_library(r2sega8_board_factory STATIC src/Systems/BoardFactory.cpp)
+target_link_libraries(r2sega8_board_factory PUBLIC r2sega8_core)
 
 if(R2SEGA8_BUILD_GUI)
     include(FetchContent)
@@ -96,7 +99,7 @@ if(R2SEGA8_BUILD_GUI)
         target_include_directories(R2SEGA8 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources")
         set_property(SOURCE resources/resource.rc APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/logob.ico")
     endif()
-    target_link_libraries(R2SEGA8 PRIVATE r2sega8_window r2sega8_core r2sega8_input r2sega8_audio)
+    target_link_libraries(R2SEGA8 PRIVATE r2sega8_window r2sega8_board_factory r2sega8_input r2sega8_audio)
     set_target_properties(R2SEGA8 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 endif()
 
@@ -140,7 +143,7 @@ if(BUILD_TESTING)
     target_link_libraries(sg1000_input_tests PRIVATE r2sega8_core)
     add_test(NAME sg1000_input_tests COMMAND sg1000_input_tests)
     add_executable(rom_system_tests tests/Systems/RomSystemTests.cpp)
-    target_link_libraries(rom_system_tests PRIVATE r2sega8_core)
+    target_link_libraries(rom_system_tests PRIVATE r2sega8_board_factory)
     add_test(NAME rom_system_tests COMMAND rom_system_tests)
     if(R2SEGA8_BUILD_GUI)
         add_executable(audio_tests tests/Systems/AudioTests.cpp)

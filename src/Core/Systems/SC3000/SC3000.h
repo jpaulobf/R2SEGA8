@@ -1,7 +1,7 @@
 #pragma once
-#include "Systems/Board.h"
+#include "Core/Board.h"
 
-namespace R2SEGA8::Systems
+namespace R2SEGA8::Core
 {
     // Representa o SC-3000 com cartucho e RAM interna para inspeção.
     // O mapa de memória, os periféricos e as expansões ainda não são implementados.

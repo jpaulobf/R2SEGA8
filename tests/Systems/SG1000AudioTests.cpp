@@ -1,4 +1,4 @@
-#include "Systems/SG1000/SG1000.h"
+#include "Core/Systems/SG1000/SG1000.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -44,7 +44,7 @@ int main()
     {
         using namespace R2SEGA8;
         Fixture fixture;
-        Systems::SG1000 board{Core::Cartridge(fixture.path)};
+        Core::SG1000 board{Core::Cartridge(fixture.path)};
         for (unsigned port = 0x40; port <= 0x7f; ++port)
         {
             board.output(static_cast<std::uint16_t>(0x1200 | port), static_cast<std::uint8_t>(0x80 | (port & 15)));
@@ -84,7 +84,7 @@ int main()
         board.cpu().reset();
         check(board.psg().state().clocks == clocks && board.psg().state().tone == programmed,
               "CPU-only reset must not reset the sound chip");
-        Systems::SG1000 fresh{Core::Cartridge(fixture.path)};
+        Core::SG1000 fresh{Core::Cartridge(fixture.path)};
         check(fresh.psg().state().clocks == 0 && fresh.psg().state().tone[0] == 0, "ROM replacement must create a fresh PSG");
         std::cout << "SG-1000 audio integration tests passed\n";
     }

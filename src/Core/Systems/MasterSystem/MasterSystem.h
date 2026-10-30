@@ -1,7 +1,7 @@
 #pragma once
-#include "Systems/Board.h"
+#include "Core/Board.h"
 
-namespace R2SEGA8::Systems
+namespace R2SEGA8::Core
 {
     // Representa o Master System com cartucho e RAM interna para inspeção.
     // O mapa de memória e os mapeadores ainda não são implementados.

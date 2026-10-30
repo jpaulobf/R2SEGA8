@@ -1,5 +1,5 @@
 #include "Common/RomFile.h"
-#include "Systems/Board.h"
+#include "Systems/BoardFactory.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
