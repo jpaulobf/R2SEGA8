@@ -5,13 +5,19 @@
 
 namespace R2SEGA8::Window
 {
+    // Geometria nativa de apresentação, fornecida pela aplicação sem expor o núcleo à interface.
+    struct DisplaySize
+    {
+        unsigned width, height;
+    };
+
     // Gerencia a janela SDL3, os eventos e a interface Dear ImGui.
     // Mantém os recursos nativos privados e os libera na ordem inversa da inicialização.
     class Window
     {
     public:
-        // Configura ações e consultas sem criar recursos SDL3 ou ImGui.
-        explicit Window(Callbacks callbacks);
+        // Configura callbacks e geometria nativa; a escala inicial é 3X, sem criar recursos SDL3 ou ImGui.
+        explicit Window(Callbacks callbacks, DisplaySize nativeSize);
 
         // Encerra os componentes ImGui e libera o renderizador, a janela e a sessão SDL3.
         ~Window();
@@ -26,14 +32,14 @@ namespace R2SEGA8::Window
         // em caso de falha ou se a sessão SDL3 já tiver sido inicializada.
         void open();
 
-        // Agenda o seletor de ROMs, preparando a prévia quando um caminho é informado.
+        // Agenda o seletor; um caminho de ROM solicita carregamento imediato no próximo desenho.
         void requestOpen(const std::filesystem::path &path = {});
 
-        // Encaminha eventos ao ImGui e trata saída, Ctrl+O e arquivos arrastados.
+        // Encaminha eventos ao ImGui e aos callbacks, informando a captura; trata saída, Ctrl+O e arquivos arrastados.
         // Retorna false quando a saída foi solicitada; exige uma sessão inicializada.
         bool processEvents();
 
-        // Consulta os dados de apresentação e notifica ações pelos callbacks.
+        // Consulta a apresentação e notifica ações e disponibilidade de entrada pelos callbacks.
         // Exige uma sessão inicializada e propaga falhas de renderização SDL3.
         void render();
 

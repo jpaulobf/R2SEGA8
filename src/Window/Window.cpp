@@ -1,10 +1,20 @@
 #include "Window.h"
 #include "FileManager.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
+#include <cmath>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+// commctrl depende dos tipos Win32; este bloco deve permanecer depois de windows.h.
+#include <commctrl.h>
+#endif
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
-#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -20,14 +30,93 @@ namespace R2SEGA8::Window
         SDL_Renderer *renderer = nullptr;
         SDL_Texture *videoTexture = nullptr;
         unsigned videoWidth = 0, videoHeight = 0;
+        DisplaySize nativeSize;
+        unsigned displayScale = 3, pendingDisplayScale = 0;
+        SDL_DisplayID centerDisplay = 0;
+        int fixedWidth = 0, fixedHeight = 0;
+        float menuHeight = 0;
+        bool maximized = false;
+#ifdef _WIN32
+        HWND nativeWindow = nullptr;
+        bool resizeHook = false;
+        // Preserva os comandos de maximização e bloqueia somente bordas e o comando nativo de redimensionar.
+        static LRESULT CALLBACK fixedWindowProc(HWND handle, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR)
+        {
+            if (message == WM_SYSCOMMAND && (wparam & 0xfff0) == SC_SIZE)
+                return 0;
+            const auto result = DefSubclassProc(handle, message, wparam, lparam);
+            if (message == WM_NCHITTEST && result >= HTLEFT && result <= HTBOTTOMRIGHT)
+                return HTBORDER;
+            return result;
+        }
+#endif
+        // Aplica a escala à área de vídeo, acrescenta o menu e centraliza no monitor atual, inclusive após restaurar.
+        void resizeDisplay(unsigned scale)
+        {
+            displayScale = scale;
+            if (!centerDisplay)
+            {
+                centerDisplay = SDL_GetDisplayForWindow(window);
+                if (!centerDisplay)
+                    throw std::runtime_error(SDL_GetError());
+            }
+            if (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED)
+            {
+                if (!SDL_RestoreWindow(window))
+                    throw std::runtime_error(SDL_GetError());
+                return; // A restauração pode ser assíncrona; o evento RESTORED conclui o tamanho solicitado.
+            }
+            maximized = false;
+            const float density = std::max(1.0f, SDL_GetWindowPixelDensity(window));
+            fixedWidth = static_cast<int>(std::lround(nativeSize.width * displayScale / density));
+            fixedHeight = static_cast<int>(std::lround(nativeSize.height * displayScale / density + menuHeight));
+            if (!SDL_SetWindowSize(window, fixedWidth, fixedHeight))
+                throw std::runtime_error(SDL_GetError());
+            const auto centered = SDL_WINDOWPOS_CENTERED_DISPLAY(centerDisplay);
+            if (!SDL_SetWindowPosition(window, centered, centered))
+                throw std::runtime_error(SDL_GetError());
+            centerDisplay = 0;
+        }
+        // Corrige tamanhos arbitrários sem impor limites que impeçam a maximização do gerenciador de janelas.
+        void enforceDisplaySize()
+        {
+            if (maximized || (SDL_GetWindowFlags(window) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED)))
+                return;
+            int width = 0, height = 0;
+            if (!SDL_GetWindowSize(window, &width, &height))
+                throw std::runtime_error(SDL_GetError());
+            if (width != fixedWidth || height != fixedHeight)
+                if (!SDL_SetWindowSize(window, fixedWidth, fixedHeight))
+                    throw std::runtime_error(SDL_GetError());
+        }
         bool sdlReady = false;
         bool contextReady = false;
         bool platformReady = false;
         bool rendererReady = false;
-        bool running = true;
+        bool running = true, focused = false, minimized = false;
+        // Consulta somente estado da interface; não conhece mapeamentos ou periféricos emulados.
+        bool acceptsInput() const
+        {
+            if (!contextReady || !running || !focused || minimized || files.isOpen())
+                return false;
+            const auto &io = ImGui::GetIO();
+            return !io.WantCaptureKeyboard && !io.WantTextInput &&
+                   !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+        }
+        // Publica mudanças de disponibilidade também nos quadros sem eventos SDL.
+        void notifyInput()
+        {
+            if (callbacks.inputAvailability)
+                callbacks.inputAvailability(acceptsInput());
+        }
         // Encaminha ações e consultas ao seletor, sem inicializar recursos nativos.
-        explicit Impl(Callbacks handlers)
-            : callbacks(std::move(handlers)), files(callbacks.inspectRom, callbacks.openRom) {}
+        explicit Impl(Callbacks handlers, DisplaySize size)
+            : callbacks(std::move(handlers)), files(callbacks.openRom), nativeSize(size)
+        {
+            const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max() / 10);
+            if (!size.width || !size.height || size.width > limit || size.height > limit)
+                throw std::invalid_argument("Invalid native presentation size.");
+        }
         // Notifica o encerramento uma única vez, mesmo com múltiplos eventos na fila.
         void requestExit()
         {
@@ -61,18 +150,26 @@ namespace R2SEGA8::Window
             if (!SDL_UpdateTexture(videoTexture, nullptr, frame.rgba, static_cast<int>(frame.pitch)))
                 throw std::runtime_error(SDL_GetError());
             const auto available = ImGui::GetContentRegionAvail();
-            const float scale = std::min(available.x / frame.width, 384.0f / frame.height);
+            const float scale = std::min(available.x / nativeSize.width, available.y / nativeSize.height);
+            const ImVec2 size(nativeSize.width * scale, nativeSize.height * scale);
             if (scale > 0)
             {
+                // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
+                const auto position = ImGui::GetCursorScreenPos();
+                ImGui::SetCursorScreenPos(ImVec2(position.x + (available.x - size.x) * 0.5f, position.y + (available.y - size.y) * 0.5f));
                 // O backend escolhe o filtro ao desenhar; limita nearest à imagem de vídeo.
                 ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest, nullptr);
-                ImGui::Image(reinterpret_cast<ImTextureID>(videoTexture), ImVec2(frame.width * scale, frame.height * scale));
+                ImGui::Image(reinterpret_cast<ImTextureID>(videoTexture), size);
                 ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
             }
         }
         // Libera somente os recursos cuja inicialização foi concluída.
         ~Impl()
         {
+#ifdef _WIN32
+            if (resizeHook)
+                RemoveWindowSubclass(nativeWindow, fixedWindowProc, 1);
+#endif
             if (rendererReady)
                 ImGui_ImplSDLRenderer3_Shutdown();
             if (platformReady)
@@ -90,7 +187,7 @@ namespace R2SEGA8::Window
         }
     };
 
-    Window::Window(Callbacks callbacks) : impl_(std::make_unique<Impl>(std::move(callbacks))) {}
+    Window::Window(Callbacks callbacks, DisplaySize nativeSize) : impl_(std::make_unique<Impl>(std::move(callbacks), nativeSize)) {}
     Window::~Window() = default;
 
     void Window::open()
@@ -102,10 +199,22 @@ namespace R2SEGA8::Window
             throw std::runtime_error(SDL_GetError());
         state.sdlReady = true;
         const float scale = std::max(1.0f, SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay()));
-        state.window = SDL_CreateWindow("R2SEGA8", static_cast<int>(960 * scale), static_cast<int>(680 * scale),
-                                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        state.window =
+            SDL_CreateWindow("R2SEGA8", static_cast<int>(state.nativeSize.width * state.displayScale), static_cast<int>(state.nativeSize.height * state.displayScale),
+                             SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (!state.window)
             throw std::runtime_error(SDL_GetError());
+#ifdef _WIN32
+        state.nativeWindow =
+            static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(state.window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+        if (state.nativeWindow)
+        {
+            if (!SetWindowSubclass(state.nativeWindow, Impl::fixedWindowProc, 1, 0))
+                throw std::runtime_error("Unable to install window sizing policy.");
+            state.resizeHook = true;
+        }
+#endif
+        state.focused = (SDL_GetWindowFlags(state.window) & SDL_WINDOW_INPUT_FOCUS) != 0;
         state.renderer = SDL_CreateRenderer(state.window, nullptr);
         if (!state.renderer)
             throw std::runtime_error(SDL_GetError());
@@ -115,6 +224,8 @@ namespace R2SEGA8::Window
         state.contextReady = true;
         auto &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        // Navegação ociosa não captura as setas do jogo; popups e campos ativos continuam bloqueando entrada.
+        io.ConfigNavCaptureKeyboard = false;
         io.IniFilename = nullptr;
         ImGui::StyleColorsDark();
         ImGui::GetStyle().ScaleAllSizes(scale);
@@ -125,9 +236,19 @@ namespace R2SEGA8::Window
         if (!ImGui_ImplSDLRenderer3_Init(state.renderer))
             throw std::runtime_error("Unable to initialize the ImGui renderer backend.");
         state.rendererReady = true;
+        // Mede a fonte real antes de definir o tamanho inicial, incluindo o menu sem reduzir a área de vídeo.
+        ImGui_ImplSDLRenderer3_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+        state.menuHeight = ImGui::GetFrameHeight();
+        ImGui::EndFrame();
+        state.resizeDisplay(state.displayScale);
     }
 
-    void Window::requestOpen(const std::filesystem::path &path) { impl_->files.requestOpen(path); }
+    void Window::requestOpen(const std::filesystem::path &path)
+    {
+        impl_->files.requestOpen(path);
+    }
 
     bool Window::processEvents()
     {
@@ -138,44 +259,51 @@ namespace R2SEGA8::Window
         while (SDL_PollEvent(&event))
         {
             ImGui_ImplSDL3_ProcessEvent(&event);
+            const auto ownID = SDL_GetWindowID(state.window);
+            const bool windowEvent = event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST;
+            const bool keyEvent = event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP;
+            const bool ownEvent =
+                (!windowEvent || event.window.windowID == ownID) && (!keyEvent || event.key.windowID == 0 || event.key.windowID == ownID);
+            if (ownEvent)
+            {
+                if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
+                    state.focused = true;
+                if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+                    state.focused = false;
+                if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
+                    state.minimized = true;
+                if (event.type == SDL_EVENT_WINDOW_MAXIMIZED)
+                {
+                    state.maximized = true;
+                    state.minimized = false;
+                }
+                if (event.type == SDL_EVENT_WINDOW_RESTORED)
+                {
+                    state.minimized = false;
+                    state.maximized = false;
+                    state.resizeDisplay(state.displayScale);
+                }
+                if (event.type == SDL_EVENT_WINDOW_RESIZED)
+                    state.enforceDisplaySize();
+                if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED && !state.maximized)
+                    state.resizeDisplay(state.displayScale);
+            }
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(state.window)))
                 state.requestExit();
-            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_O &&
+            if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.mod & SDL_KMOD_CTRL) &&
+                !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI)) && event.key.key >= SDLK_1 && event.key.key <= SDLK_5)
+                state.resizeDisplay(static_cast<unsigned>(event.key.key - SDLK_1 + 1));
+            if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_O &&
                 (event.key.mod & SDL_KMOD_CTRL))
                 state.files.requestOpen();
             if (event.type == SDL_EVENT_DROP_FILE && event.drop.data)
                 state.files.requestOpen(std::filesystem::u8path(event.drop.data));
+            if (ownEvent && state.callbacks.inputEvent)
+                state.callbacks.inputEvent(event, state.acceptsInput());
         }
+        state.notifyInput();
         return state.running;
-    }
-
-    namespace
-    {
-        void drawBytes(const char *label, ByteView bytes)
-        {
-            if (!ImGui::CollapsingHeader(label))
-                return;
-            if (ImGui::BeginChild(label, ImVec2(0, 180), ImGuiChildFlags_Borders))
-            {
-                ImGuiListClipper clipper;
-                clipper.Begin(static_cast<int>((bytes.size + 15) / 16));
-                while (clipper.Step())
-                {
-                    for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
-                    {
-                        const std::size_t start = static_cast<std::size_t>(row) * 16;
-                        ImGui::Text("%06X:", static_cast<unsigned>(start));
-                        for (std::size_t i = start; i < std::min(start + 16, bytes.size); ++i)
-                        {
-                            ImGui::SameLine();
-                            ImGui::Text("%02X", static_cast<unsigned>(bytes.data[i]));
-                        }
-                    }
-                }
-            }
-            ImGui::EndChild();
-        }
     }
 
     void Window::render()
@@ -184,16 +312,23 @@ namespace R2SEGA8::Window
         if (!state.rendererReady)
             throw std::logic_error("Open the window before rendering.");
         if (SDL_GetWindowFlags(state.window) & SDL_WINDOW_MINIMIZED)
+        {
+            state.minimized = true;
+            state.notifyInput();
             return;
+        }
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
         const auto *viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         const bool visible = ImGui::Begin("R2SEGA8", nullptr,
                                           ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                              ImGuiWindowFlags_MenuBar);
+                                              ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::PopStyleVar(2);
         if (visible)
         {
             if (ImGui::BeginMenuBar())
@@ -207,23 +342,28 @@ namespace R2SEGA8::Window
                         state.requestExit();
                     ImGui::EndMenu();
                 }
+                if (ImGui::BeginMenu("Display"))
+                {
+                    for (unsigned scale = 1; scale <= 5; ++scale)
+                    {
+                        char label[] = "1X", shortcut[] = "Ctrl+1";
+                        label[0] = static_cast<char>('0' + scale);
+                        shortcut[5] = static_cast<char>('0' + scale);
+                        if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
+                            state.pendingDisplayScale = scale;
+                    }
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMenuBar();
             }
             if (state.callbacks.frame)
                 state.drawFrame(state.callbacks.frame());
-            if (state.callbacks.memory)
-            {
-                const auto memory = state.callbacks.memory();
-                if (memory.rom.data)
-                    drawBytes("Cartridge ROM (file offsets)", memory.rom);
-                if (memory.ram.data)
-                    drawBytes("System RAM (physical offsets)", memory.ram);
-            }
             // Consome as consultas antes das ações, que podem invalidar os bytes apresentados.
             state.files.draw();
         }
         ImGui::End();
         ImGui::Render();
+        state.notifyInput();
         const auto &io = ImGui::GetIO();
         if (!SDL_SetRenderScale(state.renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y) ||
             !SDL_SetRenderDrawColor(state.renderer, 18, 21, 28, 255) || !SDL_RenderClear(state.renderer))
@@ -231,5 +371,12 @@ namespace R2SEGA8::Window
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), state.renderer);
         if (!SDL_RenderPresent(state.renderer))
             throw std::runtime_error(SDL_GetError());
+        // Aplica ações do menu depois de apresentar o quadro com a geometria usada durante seu desenho.
+        if (state.pendingDisplayScale)
+        {
+            const auto scale = state.pendingDisplayScale;
+            state.pendingDisplayScale = 0;
+            state.resizeDisplay(scale);
+        }
     }
 }
