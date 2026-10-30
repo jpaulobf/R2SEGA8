@@ -4,6 +4,18 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Revisão do TMS9918: testes de hardware selecionam explicitamente quatro
+  sprites por linha; sprites ilimitados permanecem habilitados por padrão.
+- Protegida a seleção de sprites contra escrita além do banco após restaurar
+  um estado saturado; novos testes de status/INT e snapshots por meio-dot.
+  Referências e limites da revisão registrados em docs/TMS9918Audit.md.
+
+- Revisão do Z80 com documentação oficial: corrigidos limites de BUSREQ em
+  M-cycles internos, instante da notificação RETI e proteção de setState em
+  instruções com prefixos pendentes. Novos testes de DMA, IM 0, WAIT e snapshots.
+- Executor SingleStepTests passa a rejeitar validações sem vetores. Relatório
+  da revisão e falhas de vídeo já presentes na base registrados em docs/Z80Audit.md.
+
 - Board e placas concretas dos consoles movidas para Core; seleção dos consoles
   isolada em Systems/BoardFactory. SDL e suporte da Engine permanecem fora do Core.
 
