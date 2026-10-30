@@ -176,12 +176,15 @@ namespace
 
         bus.memory.fill(0xdd);
         cpu.reset();
+        // Configura a inibição de EI antes de começar a instrução longa, sem trocar registradores no meio dela.
+        auto pending = cpu.state();
+        pending.iff1 = pending.iff2 = true;
+        pending.eiDelay = 1;
+        cpu.setState(pending);
         cpu.setIRQ(true);
         check(cpu.step() == 1024 && cpu.state().prefix == 0xdd && cpu.state().pc == 256, "Prefix stream yields");
-        auto snapshot = cpu.state();
-        snapshot.iff1 = true;
-        snapshot.eiDelay = 1;
-        cpu.setState(snapshot);
+        const auto snapshot = cpu.snapshot();
+        cpu.restore(snapshot);
         bus.memory[256] = 0x21;
         bus.memory[257] = 0x34;
         bus.memory[258] = 0x12;

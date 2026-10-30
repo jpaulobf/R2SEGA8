@@ -33,10 +33,11 @@ namespace
         vdp.restore(*state);
     }
 
-    // Cria uma cena azul e testa também os bits ignorados dos registradores de base.
+    // Cria uma cena de hardware com limite explícito, independente da preferência padrão do emulador.
     std::unique_ptr<VDP> scene(unsigned options = 0)
     {
         auto vdp = std::make_unique<VDP>();
+        vdp->setSpriteUnlimited(false);
         reg(*vdp, 1, 0xc0 | options);
         reg(*vdp, 2, 6);
         reg(*vdp, 3, 0x80);
@@ -271,10 +272,17 @@ namespace
     // Confere os 32 sprites sem limite e preserva o comportamento original quando o limite está ligado.
     void unlimited()
     {
+        auto defaults = std::make_unique<VDP>();
+        check(defaults->state().spriteUnlimited, "Unlimited sprites is the emulator default");
+        defaults->reset();
+        check(defaults->state().spriteUnlimited, "Reset preserves the default unlimited preference");
+        defaults->setSpriteUnlimited(false);
+        defaults->reset();
+        check(!defaults->state().spriteUnlimited, "Reset preserves an explicit hardware-limit preference");
         for (bool unlimited : {false, true})
         {
             auto vdp = scene();
-            check(!vdp->state().spriteUnlimited, "Hardware sprite limit is the default");
+            check(!vdp->state().spriteUnlimited, "Hardware scenes explicitly enable the four-sprite limit");
             vdp->setSpriteUnlimited(unlimited);
             solid(*vdp);
             for (unsigned i = 0; i < 32; ++i)

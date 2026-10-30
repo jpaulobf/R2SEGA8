@@ -309,7 +309,7 @@ namespace
         if (mode == 8)
         {
             vram.fill(0);
-            // Trinta e dois sprites 16x16 ampliados: oito por faixa, somente quatro visíveis por linha.
+            // Trinta e dois sprites 16x16 ampliados: oito por faixa, visíveis no padrão sem limite do emulador.
             constexpr Byte spriteColors[] = {2, 15, 6, 10, 3, 8, 12, 14};
             for (unsigned index = 0; index < 32; ++index)
             {
@@ -401,9 +401,9 @@ namespace
                 }
                 else if (mode == 8)
                 {
-                    constexpr unsigned spriteColors[] = {2, 15, 6, 10};
+                    constexpr unsigned spriteColors[] = {2, 15, 6, 10, 3, 8, 12, 14};
                     if (y >= 32 && y < 184 && (y - 32) % 40 < 32)
-                        for (unsigned column = 0; column < 4; ++column)
+                        for (unsigned column = 0; column < 8; ++column)
                         {
                             const unsigned left = 16 + column * 28;
                             if (x < left || x >= left + 32)
