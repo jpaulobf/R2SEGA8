@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Core/Cartridge/Cartridge.h"
+#include "Common/Buttons.h"
 #include "Core/CPU/Z80/Z80.h"
+#include "Core/Cartridge/Cartridge.h"
 #include "Core/VideoFrame.h"
 #include <memory>
 #include <vector>
@@ -36,6 +37,16 @@ namespace R2SEGA8::Systems
 
         // Consulta o último quadro completo; placas sem vídeo implementado retornam uma consulta vazia.
         virtual Core::VideoFrame videoFrame() const { return {}; }
+
+        // Recebe intenções lógicas do jogador; placas sem controles implementados ignoram a atualização.
+        virtual void setButtons(unsigned, Common::ButtonMask) {}
+
+        // Publica o estado dos dois jogadores na mesma atualização de entrada.
+        virtual void setInput(const Common::InputState &buttons)
+        {
+            for (unsigned player = 0; player < buttons.size(); ++player)
+                setButtons(player, buttons[player]);
+        }
 
         // Retorna FF provisoriamente enquanto os periféricos não estiverem conectados.
         std::uint8_t input(std::uint16_t port) override;

@@ -6,18 +6,10 @@
 #include <filesystem>
 #include <functional>
 
+union SDL_Event;
+
 namespace R2SEGA8::Window
 {
-    // Dados de apresentação da seleção; não carrega nem mantém um cartucho emulado.
-    struct RomPreview
-    {
-        std::filesystem::path path;
-        std::size_t size = 0;
-        Common::SystemType suggestedSystem = Common::SystemType::Unknown;
-        bool hasHeader = false;
-        bool conflictingHints = false;
-    };
-
     // Consulta somente de leitura; o proprietário mantém os bytes válidos durante a apresentação.
     struct ByteView
     {
@@ -42,13 +34,9 @@ namespace R2SEGA8::Window
     // Contrato da interface: ações e consultas são atendidas pelo chamador.
     struct Callbacks
     {
-        using InspectRom = std::function<RomPreview(const std::filesystem::path &)>;
         using OpenRom = std::function<void(const std::filesystem::path &, Common::SystemType)>;
 
-        // Solicita uma prévia; falhas são apresentadas no seletor de arquivos.
-        InspectRom inspectRom;
-
-        // Solicita o carregamento confirmado; falhas mantêm o diálogo aberto.
+        // Solicita carregamento imediato com o sistema da extensão; falhas mantêm o diálogo aberto.
         OpenRom openRom;
 
         // Consulta os bytes para apresentação, antes de emitir ações que possam invalidá-los.
@@ -56,6 +44,12 @@ namespace R2SEGA8::Window
 
         // Consulta o quadro para copiar à textura antes de emitir ações que possam invalidar seus bytes.
         std::function<FrameView()> frame;
+
+        // Encaminha eventos do host e informa se a interface permite entrada de jogo neste instante.
+        std::function<void(const SDL_Event &, bool)> inputEvent;
+
+        // Notifica foco/captura/diálogos, inclusive quando não há eventos ou um menu abre durante render.
+        std::function<void(bool)> inputAvailability;
 
         // Notifica o pedido de encerramento pelo menu, pela janela ou pelo sistema operacional.
         std::function<void()> exit;
