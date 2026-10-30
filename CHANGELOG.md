@@ -4,6 +4,13 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Sprites do TMS9918 com seleção e buscas distribuídas por dot, SIZE/MAG,
+  early clock, prioridade, transparência, colisão e flag/índice do quinto sprite.
+- Limite padrão de quatro sprites por linha e opção no núcleo para até 32,
+  com fetch adicional por dot e estado completo para retomada.
+- Testes de sprites, fases do fetch, snapshots e ROM própria com conferência
+  de todos os pixels e reconhecimento de colisão/overflow pela ISR do Z80.
+
 - Backgrounds Graphics II, Text e Multicolor do TMS9918, com máscaras e bancos
   de padrões/cores, caracteres de 6×8 e blocos de cor de 4×4.
 - Testes de pixels e ROMs próprias dos quatro modos, com inicialização pelo
