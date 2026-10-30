@@ -4,6 +4,20 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Backgrounds Graphics II, Text e Multicolor do TMS9918, com máscaras e bancos
+  de padrões/cores, caracteres de 6×8 e blocos de cor de 4×4.
+- Testes de pixels e ROMs próprias dos quatro modos, com inicialização pelo
+  Z80, conferência de VBlank/INT e exportação das imagens para revisão.
+
+- TMS9918 inicial: VRAM de 16 KiB, oito registradores, portas de dados/controle,
+  buffer de leitura, incremento de endereço e latches de controle.
+- Raster NTSC e interrupção de VBlank ligados ao clock e a INT do Z80 no SG-1000,
+  com decodificação dos espelhos de porta 80–BF.
+- Background Graphics I e backdrop em quadros RGBA, apresentados por callback
+  com textura SDL e filtro nearest, mantendo a janela independente do núcleo.
+- Testes de VDP, integração Z80/VDP e apresentação; ROM própria de demonstração
+  exportável com conferência de todos os pixels e atendimento de VBlank por uma ISR emulada.
+
 - Interface desacoplada da emulação: `Window` e `FileManager` comunicam ações
   e consultas por callbacks; a `Engine` inspeciona ROMs, cria cartuchos e aciona a `Board`.
 - Teste da janela independente do núcleo, incluindo erros de callbacks e notificação de saída.
