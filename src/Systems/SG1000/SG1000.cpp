@@ -70,6 +70,12 @@ namespace R2SEGA8::Systems
 
     void SG1000::output(std::uint16_t port, std::uint8_t value)
     {
+        if ((port & 0xc0) == 0x40)
+        {
+            psg_.write(value);
+            cpu().setWAIT(!psg_.ready());
+            return;
+        }
         if ((port & 0xc0) != 0x80)
             return;
         if (port & 1)
@@ -84,6 +90,13 @@ namespace R2SEGA8::Systems
     {
         // O cristal é dividido por três para a CPU e por dois para os pixels do VDP.
         vdp_.runMasterTicks(3);
+        // PSG e CPU recebem o mesmo clock; WAIT não interrompe os periféricos.
+        const bool wasReady = psg_.ready();
+        psg_.tick();
+        if (!psg_.ready())
+            cpu().setWAIT(true);
+        else if (!wasReady)
+            cpu().setWAIT(false);
         if (vdp_.frame().number != inputFrame_)
             applyButtons();
         cpu().setIRQ(vdp_.interrupt());
