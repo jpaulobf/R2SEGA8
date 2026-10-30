@@ -24,4 +24,32 @@ namespace R2SEGA8::Systems
         if (address >= 0xc000)
             ram_[address & 0x03ff] = value;
     }
+
+    std::uint8_t SG1000::input(std::uint16_t port)
+    {
+        if ((port & 0xc0) != 0x80)
+            return 0xff;
+        const auto value = (port & 1) ? vdp_.readStatus() : vdp_.readData();
+        cpu().setIRQ(vdp_.interrupt());
+        return value;
+    }
+
+    void SG1000::output(std::uint16_t port, std::uint8_t value)
+    {
+        if ((port & 0xc0) != 0x80)
+            return;
+        if (port & 1)
+            vdp_.writeControl(value);
+        else
+            vdp_.writeData(value);
+        // Habilitar INT com VBlank já pendente também altera a linha imediatamente.
+        cpu().setIRQ(vdp_.interrupt());
+    }
+
+    void SG1000::clock(const Core::Z80Pins &)
+    {
+        // O cristal é dividido por três para a CPU e por dois para os pixels do VDP.
+        vdp_.runMasterTicks(3);
+        cpu().setIRQ(vdp_.interrupt());
+    }
 }
