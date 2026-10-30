@@ -2,6 +2,7 @@
 
 #include "Core/Cartridge/Cartridge.h"
 #include "Core/CPU/Z80/Z80.h"
+#include "Core/VideoFrame.h"
 #include <memory>
 #include <vector>
 
@@ -32,6 +33,9 @@ namespace R2SEGA8::Systems
 
         // Retorna zero enquanto a máquina não oferecer um perfil de execução.
         virtual unsigned clockFrequency() const { return 0; }
+
+        // Consulta o último quadro completo; placas sem vídeo implementado retornam uma consulta vazia.
+        virtual Core::VideoFrame videoFrame() const { return {}; }
 
         // Retorna FF provisoriamente enquanto os periféricos não estiverem conectados.
         std::uint8_t input(std::uint16_t port) override;

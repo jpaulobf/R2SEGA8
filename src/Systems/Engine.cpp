@@ -39,7 +39,7 @@ int R2SEGA8::Systems::Engine::run()
                             static_cast<unsigned>(loaded.header()->offset), static_cast<unsigned>(loaded.header()->region),
                             static_cast<unsigned>(loaded.header()->sizeCode));
             if (board->hasMemoryMap())
-                std::puts("SG-1000: Z80 enabled; 0000-BFFF cartridge; C000-FFFF mirrored 1 KiB RAM. Video, audio, input, cartridge RAM and banking are pending.");
+                std::puts("SG-1000: Z80 and TMS9918 backgrounds enabled (Graphics I/II, Text, Multicolor). Sprites, audio, input and cartridge banking are pending.");
             else
                 std::puts("ROM loaded; system memory mapping is not implemented yet.");
             std::fflush(stdout);
@@ -54,6 +54,13 @@ int R2SEGA8::Systems::Engine::run()
         };
         callbacks.exit = [&]()
         { running = false; };
+        callbacks.frame = [&]() -> R2SEGA8::Window::FrameView
+        {
+            if (!board)
+                return {};
+            const auto frame = board->videoFrame();
+            return {frame.rgba, frame.width, frame.height, frame.pitch};
+        };
         R2SEGA8::Window::Window window(std::move(callbacks));
         window.open();
         while (running)
