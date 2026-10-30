@@ -1,10 +1,10 @@
 # Arquitetura do R2SEGA8
 
 Alvos: SG-1000, SC-3000, Master System e Game Gear. A primeira entrega permite
-abrir e inspecionar ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
+abrir ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
 executa por T-state no perfil inicial do SG-1000, junto do TMS9918 com
-os backgrounds Graphics I/II, Text e Multicolor, sprites com buscas por dot e interrupção de VBlank.
-Áudio e controles ainda não estão implementados.
+os backgrounds Graphics I/II, Text e Multicolor, sprites, arbitragem da VRAM e buscas de background por dot, além da interrupção de VBlank.
+Controles de dois jogadores e Pause/Hold estão implementados; áudio permanece pendente.
 
 ## Responsabilidades
 
@@ -19,7 +19,8 @@ os backgrounds Graphics I/II, Text e Multicolor, sprites com buscas por dot e in
 | `src/Core/Memory` | Armazenamento de RAM, ROM e operações comuns de memória. |
 | `src/Core/Bus` | Contratos de acesso à memória e às portas de I/O. |
 | `src/Core/Cartridge` | Carregamento de imagens, metadados e mapeadores. |
-| `src/Core/Input` | Estado dos dispositivos emulados, sem eventos SDL. |
+| `src/Core/IO` | Linhas dos controles emulados, sem eventos SDL. |
+| `src/Systems/Input.h/.cpp` | Adaptação de teclado/gamepads; a Engine encaminha os estados à placa. |
 | `src/Core/Timing` | Contagem de ciclos e ferramentas de sincronização. |
 | `src/Systems` | Composição de cada máquina, mapas de memória, portas, reset e configuração. |
 | `src/Systems/Board.h` | Contrato da placa emulada, reunindo CPU, cartucho, RAM e barramento. |
@@ -40,7 +41,7 @@ os backgrounds Graphics I/II, Text e Multicolor, sprites com buscas por dot e in
   com a aplicação gráfica; o núcleo permanece independente de SDL3 e ImGui.
 - `Window` depende apenas de SDL3, ImGui, tipos compartilhados de `Common` e
   seu contrato de callbacks. Não inclui nem vincula `Core`, `Board` ou `Engine`.
-- A `Engine` registra callbacks para inspeção de ROM, carregamento, consulta
+- A `Engine` registra callbacks para carregamento de ROM, consulta
   de memória, quadro de vídeo e encerramento. A interface transmite caminho e seleção; somente
   a `Engine` cria cartuchos e aciona a `Board`.
 - O Z80 acessa memória e portas por contratos do barramento. O mapa concreto
@@ -74,11 +75,14 @@ flowchart LR
     E -->|cria e executa| B[Board]
 ```
 
-`RomPreview` contém somente caminho e metadados para apresentação. O seletor
-de arquivos navega nas pastas, mas solicita a inspeção ao callback em vez de
-ler a ROM como um cartucho. Ao confirmar, envia caminho e sistema escolhido
-ao callback de carregamento. Exceções desses callbacks aparecem no diálogo,
-sem substituir a placa ativa quando a operação falha.
+O seletor navega nas pastas e carrega imediatamente a ROM clicada, passando
+caminho e sistema da extensão ao callback `openRom`. Não há prévia, confirmação
+ou seleção manual de sistema. Extensões SG/SC/SMS/GG são identificadas por uma
+função comum, sem ler os bytes do cartucho na interface. ZIP e BIN continuam
+listados, mas mostram uma mensagem de suporte pendente ao serem escolhidos.
+Exceções mantêm o diálogo aberto; a Engine preserva a placa anterior se a
+construção da nova máquina falhar. Pedidos de arquivo por drag-and-drop são
+consumidos uma única vez no desenho, depois de copiar o quadro anterior.
 
 Os visualizadores recebem `MemoryView`, com consultas de leitura a bytes,
 sem conhecer sua origem. O proprietário mantém esses bytes válidos durante
@@ -100,10 +104,11 @@ somente a biblioteca de interface; seus cenários não precisam do núcleo.
    diretórios, falhas de leitura, ZIP e imagens acima do limite de alocação de 16 MiB.
 2. `Core::Cartridge` conserva os bytes originais e o caminho do arquivo. Extensão
    e cabeçalho Sega fornecem sugestões; não certificam compatibilidade.
-3. A `Engine` fornece a prévia por callback. `Window::FileManager` mostra a
-   sugestão e permite escolher o sistema antes de notificar o carregamento.
-   O cabeçalho tem precedência sobre a extensão, com aviso de conflito.
-4. A `Engine` lê o cartucho confirmado e chama `Systems::createBoard` para
+3. `Window::FileManager` usa a extensão para escolher o sistema e chama o
+   callback assim que o usuário clica. A sugestão pelo cabeçalho do cartucho
+   não substitui a extensão neste fluxo; detecção de BIN e conteúdo ZIP fica
+   para uma etapa futura.
+4. A `Engine` lê o cartucho uma vez e chama `Systems::createBoard` para
    construir a placa específica com CPU, cartucho e RAM.
    A máquina ativa só é substituída depois que a construção termina com sucesso.
 
@@ -139,12 +144,23 @@ e a organização de janela do R2BOY.
 
 O contrato de barramento e o Z80 estão implementados e descritos em
 [Z80.md](Z80.md). Os quatro modos de background do VDP e suas demonstrações
-estão em [TMS9918.md](TMS9918.md). A sequência seguinte é:
+estão em [TMS9918.md](TMS9918.md), incluindo a política funcional de escritas
+no meio da linha e seus testes. A sequência seguinte é:
 
-1. Refinar a arbitragem/fetches de background da VRAM e integrar PSG e controles.
+1. Integrar PSG; ampliar os testes de ROMs, controles físicos e timings do VDP em hardware.
 2. Integrar reprodução de áudio e sincronização com vídeo pela interface SDL3 existente.
 3. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
    específicos antes de anunciar suporte de execução.
 
 FM, periféricos e mapeadores adicionais podem ser introduzidos conforme os
 testes e programas utilizados exigirem.
+
+A entrada segue Window → callbacks → Engine/Input → Board → Joypad.
+As máscaras e o enum comuns não dependem de SDL. O turbo segue os quadros
+emulados da placa. Veja [Input.md](Input.md) para mapeamentos, hotplug e testes.
+
+A janela principal usa somente vídeo e menus. O inspetor hexadecimal e os
+callbacks de memória foram preservados para Debug. A apresentação recebe
+geometria neutra e oferece escalas 1X–5X (3X inicial), maximização e proporção
+preservada; veja [Display.md](Display.md). Fullscreen futuro será somente
+borderless, com proporção ou stretched; Exclusive Fullscreen fica excluído.
