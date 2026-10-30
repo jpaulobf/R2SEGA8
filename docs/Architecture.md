@@ -4,7 +4,9 @@ Alvos: SG-1000, SC-3000, Master System e Game Gear. A primeira entrega permite
 abrir ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
 executa por T-state no perfil inicial do SG-1000, junto do TMS9918 com
 os backgrounds Graphics I/II, Text e Multicolor, sprites, arbitragem da VRAM e buscas de background por dot, além da interrupção de VBlank.
-Controles de dois jogadores e Pause/Hold estão implementados; áudio permanece pendente.
+Controles de dois jogadores, Pause/Hold e áudio SN76489AN estão implementados.
+O PSG avança junto da CPU e entrega PCM à Engine; `Systems::Audio` cuida da
+reprodução SDL3, sem participação da Window. Veja [áudio do SG-1000](SN76489.md).
 
 ## Responsabilidades
 
@@ -21,6 +23,7 @@ Controles de dois jogadores e Pause/Hold estão implementados; áudio permanece 
 | `src/Core/Cartridge` | Carregamento de imagens, metadados e mapeadores. |
 | `src/Core/IO` | Linhas dos controles emulados, sem eventos SDL. |
 | `src/Systems/Input.h/.cpp` | Adaptação de teclado/gamepads; a Engine encaminha os estados à placa. |
+| `src/Systems/Audio.h/.cpp` | Reprodução PCM via SDL3, com preparação e limite de fila. |
 | `src/Core/Timing` | Contagem de ciclos e ferramentas de sincronização. |
 | `src/Systems` | Composição de cada máquina, mapas de memória, portas, reset e configuração. |
 | `src/Systems/Board.h` | Contrato da placa emulada, reunindo CPU, cartucho, RAM e barramento. |
@@ -158,8 +161,8 @@ O contrato de barramento e o Z80 estão implementados e descritos em
 estão em [TMS9918.md](TMS9918.md), incluindo a política funcional de escritas
 no meio da linha e seus testes. A sequência seguinte é:
 
-1. Integrar PSG; ampliar os testes de ROMs, controles físicos e timings do VDP em hardware.
-2. Integrar reprodução de áudio e sincronização com vídeo pela interface SDL3 existente.
+1. Ampliar os testes de ROMs, controles físicos, áudio e timings do VDP em hardware.
+2. Refinar a sincronização de áudio e vídeo, incluindo VSync e recuperação de atrasos.
 3. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
    específicos antes de anunciar suporte de execução.
 

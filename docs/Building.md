@@ -21,6 +21,12 @@ O executável é gerado em `bin/` ou `bin/Debug/` quando o gerador oferece
 múltiplas configurações. Para uma compilação Release, use `Release` no lugar
 de `Debug` nos comandos correspondentes.
 
+Para jogar e avaliar continuidade de áudio, prefira **Release**. A emulação
+por T-state/dot precisa produzir cada quadro dentro do prazo do console;
+uma compilação Debug sem otimizações pode não sustentar tempo real, mesmo
+quando todos os testes funcionais passam. As duas configurações continuam
+disponíveis em pastas de build separadas.
+
 ## Núcleo sem interface gráfica
 
 Esta configuração compila a CPU, o carregamento de ROMs e os sistemas sem
