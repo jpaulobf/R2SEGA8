@@ -7,7 +7,7 @@ namespace R2SEGA8::Systems
     {
     public:
         // Inicializa a sessão e executa eventos, carregamento, emulação e apresentação.
-        // Limita provisoriamente o loop a 60 FPS, cedendo a CPU entre quadros.
+        // Respeita a razão de clocks por quadro da placa, cedendo a CPU até o próximo prazo.
         // Retorna zero ao encerrar normalmente ou um após registrar uma falha no console.
         int run();
     };
