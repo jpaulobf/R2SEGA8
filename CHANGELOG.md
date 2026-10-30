@@ -4,6 +4,42 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## [Unreleased]
 
+- Seleção de ROM com carga imediata ao clicar, identificação pela extensão
+  SG/SC/SMS/GG sem distinção de maiúsculas e remoção da etapa de confirmação.
+- Drag-and-drop e caminhos de arquivo também carregam diretamente; falhas
+  mantêm o diálogo aberto sem repetir tentativas ou substituir a ROM anterior.
+- ZIP e identificação automática de BIN adiados; o seletor informa essa limitação.
+
+- Janela principal dedicada ao vídeo, com MemoryInspector e callbacks de ROM/RAM
+  preservados para futuras janelas de Debug.
+- Menu Display com 1X–5X e Ctrl+1–5, padrão 3X, tamanho de vídeo separado do menu
+  e apresentação centralizada com proporção preservada em toda a área disponível.
+- Política de tamanho fixo com maximização: bloqueio de bordas/comando de resize
+  no Windows e retorno ao preset para tamanhos normais arbitrários.
+- Fullscreen adiado para modos borderless com proporção ou stretched;
+  Exclusive Fullscreen excluído do plano.
+
+- Controles do SG-1000: enum lógico, maps de teclado/gamepad, dois jogadores,
+  analógico com zona morta e detecção inicial/hotplug pela SDL3.
+- Portas DC/DD e espelhos ativos em zero, Start como Pause/Hold por NMI e
+  turbo sincronizado aos quadros emulados, inclusive durante HALT/WAIT.
+- Callbacks de eventos/disponibilidade mantêm Window independente do núcleo;
+  foco, captura e diálogos liberam as entradas. Testes incluem controles virtuais.
+
+- Aplicação temporal dos registradores do TMS9918: formato da célula preservado
+  em trocas de modo e avanço dos latches de saída durante apagamento.
+- Condição comum de habilitação de sprites para seleção, buscas, composição e
+  colisão; novas fases de saída incluídas nos snapshots.
+- Testes de alterações de R0–R7 entre dots/fetches, troca de slots com acesso
+  pendente e ROM Z80 com mudanças de cor durante o raster.
+
+- Sequenciador de VRAM do TMS9918: slots de CPU por modo, refresh, preparação
+  de acessos, pré-busca adiada e substituição de pedidos rápidos sem fila.
+- Fetches de nome, cor e padrão em fases por dot, com células de pré-busca,
+  latches de saída e estado completo para retomada.
+- Testes dos mapas de slots, escritas entre fases de background e ROMs Z80
+  comparando transferências rápidas e espaçadas com o display ativo.
+
 - Sprites do TMS9918 com seleção e buscas distribuídas por dot, SIZE/MAG,
   early clock, prioridade, transparência, colisão e flag/índice do quinto sprite.
 - Limite padrão de quatro sprites por linha e opção no núcleo para até 32,
