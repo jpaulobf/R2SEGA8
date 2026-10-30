@@ -1,0 +1,2 @@
+// ID 101 para o ícone. O Windows costuma usar o primeiro ícone do recurso como ícone do .exe
+101 ICON "logob.ico"
