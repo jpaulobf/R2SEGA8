@@ -5,6 +5,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -17,6 +18,8 @@ namespace R2SEGA8::Window
         FileManager files;
         SDL_Window *window = nullptr;
         SDL_Renderer *renderer = nullptr;
+        SDL_Texture *videoTexture = nullptr;
+        unsigned videoWidth = 0, videoHeight = 0;
         bool sdlReady = false;
         bool contextReady = false;
         bool platformReady = false;
@@ -34,6 +37,39 @@ namespace R2SEGA8::Window
             if (callbacks.exit)
                 callbacks.exit();
         }
+        // Copia um quadro neutro para a textura; os bytes do callback não escapam desta chamada.
+        void drawFrame(FrameView frame)
+        {
+            if (!frame.rgba || !frame.width || !frame.height)
+                return;
+            const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max());
+            if (frame.width > limit / 4 || frame.height > limit || frame.pitch > limit || frame.pitch < frame.width * 4)
+                throw std::invalid_argument("Invalid presentation frame dimensions or pitch.");
+            if (!videoTexture || videoWidth != frame.width || videoHeight != frame.height)
+            {
+                if (videoTexture)
+                    SDL_DestroyTexture(videoTexture);
+                videoTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
+                                                 static_cast<int>(frame.width), static_cast<int>(frame.height));
+                if (!videoTexture)
+                    throw std::runtime_error(SDL_GetError());
+                videoWidth = frame.width;
+                videoHeight = frame.height;
+                if (!SDL_SetTextureScaleMode(videoTexture, SDL_SCALEMODE_NEAREST))
+                    throw std::runtime_error(SDL_GetError());
+            }
+            if (!SDL_UpdateTexture(videoTexture, nullptr, frame.rgba, static_cast<int>(frame.pitch)))
+                throw std::runtime_error(SDL_GetError());
+            const auto available = ImGui::GetContentRegionAvail();
+            const float scale = std::min(available.x / frame.width, 384.0f / frame.height);
+            if (scale > 0)
+            {
+                // O backend escolhe o filtro ao desenhar; limita nearest à imagem de vídeo.
+                ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest, nullptr);
+                ImGui::Image(reinterpret_cast<ImTextureID>(videoTexture), ImVec2(frame.width * scale, frame.height * scale));
+                ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
+            }
+        }
         // Libera somente os recursos cuja inicialização foi concluída.
         ~Impl()
         {
@@ -43,6 +79,8 @@ namespace R2SEGA8::Window
                 ImGui_ImplSDL3_Shutdown();
             if (contextReady)
                 ImGui::DestroyContext();
+            if (videoTexture)
+                SDL_DestroyTexture(videoTexture);
             if (renderer)
                 SDL_DestroyRenderer(renderer);
             if (window)
@@ -171,6 +209,8 @@ namespace R2SEGA8::Window
                 }
                 ImGui::EndMenuBar();
             }
+            if (state.callbacks.frame)
+                state.drawFrame(state.callbacks.frame());
             if (state.callbacks.memory)
             {
                 const auto memory = state.callbacks.memory();
