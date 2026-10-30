@@ -214,10 +214,22 @@ int main()
                 pixels[i + 3] = 255;
             }
             std::filesystem::path loadedPath;
+            unsigned resets = 0, unloads = 0;
             auto loadedType = R2SEGA8::Common::SystemType::Unknown;
             std::vector<std::uint8_t> rom;
             std::array<std::uint8_t, 1024> ram{};
             R2SEGA8::Window::Callbacks callbacks;
+            callbacks.hasRom = [&]()
+            { return !loadedPath.empty(); };
+            callbacks.reset = [&]()
+            { ++resets; };
+            callbacks.unload = [&]()
+            {
+                ++unloads;
+                loadedPath.clear();
+                frameEnabled = false;
+                rom.clear();
+            };
             // O teste da interface usa dados neutros e não vincula o núcleo de emulação.
             callbacks.inputEvent = [&](const SDL_Event &event, bool enabled)
             {
@@ -376,6 +388,38 @@ int main()
             if (loads != 6 || loadedPath != fixture ||
                 ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
                 throw std::runtime_error("Direct file requests must also load without confirmation");
+            // F12 deve acionar somente a aplicação desta janela, sem repetir ao manter a tecla pressionada.
+            SDL_Event resetKey{};
+            resetKey.type = SDL_EVENT_KEY_DOWN;
+            resetKey.key.windowID = windowID;
+            resetKey.key.key = SDLK_F12;
+            SDL_PushEvent(&resetKey);
+            window.processEvents();
+            if (resets != 1)
+                throw std::runtime_error("F12 must request reset through the application callback");
+            resetKey.key.repeat = true;
+            SDL_PushEvent(&resetKey);
+            window.processEvents();
+            resetKey.key.repeat = false;
+            resetKey.key.windowID = windowID + 1000;
+            SDL_PushEvent(&resetKey);
+            window.processEvents();
+            const auto *mainMenu = ImGui::FindWindowByName("R2SEGA8");
+            const auto menuBarID = ImHashStr("##MenuBar", 0, mainMenu->ID);
+            ImGui::ActivateItemByID(ImHashStr("File", 0, menuBarID));
+            window.render();
+            const auto *fileMenu = ImGui::FindWindowByName("###Menu_00");
+            if (!fileMenu || !fileMenu->Active)
+                throw std::runtime_error("File menu did not open");
+            ImGui::ActivateItemByID(ImHashStr("Unload", 0, fileMenu->ID));
+            window.render();
+            if (unloads != 1 || !loadedPath.empty() || std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8" || hasVideoTexture(8, 8))
+                throw std::runtime_error("Unload must notify the application, clear the video and restore the title");
+            resetKey.key.windowID = windowID;
+            SDL_PushEvent(&resetKey);
+            window.processEvents();
+            if (resets != 1)
+                throw std::runtime_error("F12 must ignore repeats, foreign windows and an unloaded session");
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
             if (!SDL_PushEvent(&quit) || !SDL_PushEvent(&quit) || window.processEvents() || exits != 1)
