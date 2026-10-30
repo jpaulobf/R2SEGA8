@@ -1,5 +1,5 @@
 #pragma once
-#include "Core/VideoFrame.h"
+#include "../VideoFrame.h"
 #include <array>
 #include <cstdint>
 
@@ -61,7 +61,9 @@ namespace R2SEGA8::Core
             std::uint8_t selectedSprites = 0, nextSpriteCount = 0, spriteCount = 0;
             std::uint8_t extraFetchIndex = 4, extraFetchPhase = 0;
             std::uint16_t spriteTargetLine = 0;
-            bool spriteEvaluationStopped = true, spriteUnlimited = false, evaluationSpriteUnlimited = false;
+            bool spriteEvaluationStopped = true;
+            bool spriteUnlimited = true;
+            bool evaluationSpriteUnlimited = false;
             std::uint16_t address = 0, dot = 0, line = 0;
             std::uint8_t readBuffer = 0, controlLatch = 0, status = 0x1f;
             std::uint8_t masterPhase = 0, drawingImage = 0, pattern = 0, colors = 0;

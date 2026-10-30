@@ -4,7 +4,7 @@
 #include "Common/AudioSettings.h"
 #include "Core/CPU/Z80/Z80.h"
 #include "Core/Cartridge/Cartridge.h"
-#include "Core/VideoFrame.h"
+#include "Core/VDP/VideoFrame.h"
 #include <vector>
 
 namespace R2SEGA8::Core
