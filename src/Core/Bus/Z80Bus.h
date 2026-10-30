@@ -43,8 +43,8 @@ namespace R2SEGA8::Core
 
         // Fornece o opcode/vetor durante o reconhecimento de INT; FF representa o padrão sem dispositivo.
         virtual std::uint8_t interruptAcknowledge() { return 0xff; }
-        
-        // Notifica RETI para futuras cadeias de prioridade de interrupção.
+
+        // Notifica a decodificação de ED/4D após M1 e antes da pilha, para cadeias de prioridade de interrupção.
         virtual void reti() {}
 
         // Avança os periféricos por um T-state, inclusive em HALT, WAIT e cessão do barramento.

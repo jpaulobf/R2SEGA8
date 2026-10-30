@@ -96,6 +96,7 @@ namespace R2SEGA8::Core
     }
 
     void Z80::idle(unsigned length) { access(CycleKind::Internal, decoderPins_.address, length); }
+    void Z80::internalCycle(unsigned length) { access(CycleKind::InternalCycle, decoderPins_.address, length); }
     Byte Z80::read(Word address) { return access(CycleKind::Read, address, 3); }
     void Z80::write(Word address, Byte value) { access(CycleKind::Write, address, 3, value); }
 
@@ -253,6 +254,7 @@ namespace R2SEGA8::Core
             }
             break;
         case CycleKind::Internal:
+        case CycleKind::InternalCycle:
         case CycleKind::Reti:
             break;
         }
@@ -260,7 +262,7 @@ namespace R2SEGA8::Core
         bus_.clock(pins_);
         const unsigned waitPhase = kind == CycleKind::Input || kind == CycleKind::Output ? 2 : kind == CycleKind::Interrupt ? 3
                                                                                                                             : 1;
-        const bool waitable = kind != CycleKind::Internal && kind != CycleKind::Reti;
+        const bool waitable = kind != CycleKind::Internal && kind != CycleKind::InternalCycle && kind != CycleKind::Reti;
         if (waitable && phase == waitPhase && waitLine_)
             return false;
         if (++cycle_.phase == cycle_.length)
@@ -306,7 +308,7 @@ namespace R2SEGA8::Core
     {
         // O snapshot é opaco: todos os campos foram produzidos pela própria CPU.
         active_ = false;
-        setState(saved.state);
+        installState(saved.state);
         initial_ = saved.initial;
         pins_ = saved.pins;
         completed_ = saved.completed;

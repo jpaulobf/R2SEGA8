@@ -319,6 +319,13 @@ namespace R2SEGA8::Core
                 return;
             }
         }
+        // Estados restaurados podem combinar uma seleção cheia com uma fase anterior da avaliação.
+        // Mesmo nesse caso, a extensão sem limite continua restrita aos 32 sprites da SAT.
+        if (state_.selectedSprites >= state_.evaluatedSprites.size())
+        {
+            state_.spriteEvaluationStopped = true;
+            return;
+        }
         state_.evaluatedSprites[state_.selectedSprites++].index = static_cast<std::uint8_t>(index);
     }
 

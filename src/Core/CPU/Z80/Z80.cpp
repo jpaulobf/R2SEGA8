@@ -37,8 +37,13 @@ namespace R2SEGA8::Core
 
     void Z80::setState(const State &state)
     {
-        if (active_)
+        if (!instructionBoundary())
             throw std::logic_error("Restore Z80 state only at an instruction boundary.");
+        installState(state);
+    }
+
+    void Z80::installState(const State &state)
+    {
         if (state.im > 2 || state.eiDelay > 2 || (state.prefix != 0 && state.prefix != 0xdd && state.prefix != 0xfd))
             throw std::invalid_argument("Invalid Z80 control state.");
         s_ = state;
@@ -368,7 +373,7 @@ namespace R2SEGA8::Core
             address = static_cast<Word>(pair(2, index) + displacement);
             s_.wz = address;
             if (opcode != 0x36)
-                idle(5);
+                internalCycle(5);
         }
         if (x == 0)
         {
@@ -389,7 +394,7 @@ namespace R2SEGA8::Core
                     const auto displacement = static_cast<std::int8_t>(immediate());
                     const bool take = y == 2 ? --s_.b != 0 : y == 3 || condition(y - 4);
                     if (take)
-                        idle(5);
+                        internalCycle(5);
                     if (take)
                         s_.wz = s_.pc = static_cast<Word>(s_.pc + displacement);
                     return y == 2 ? (take ? 13 : 8) : take ? 12
@@ -401,7 +406,9 @@ namespace R2SEGA8::Core
                     setPair(p, immediate16(), index);
                     return 10;
                 }
-                idle(7);
+                // UM0080: ADD de 16 bits usa M-cycles internos de quatro e três T-states.
+                internalCycle(4);
+                internalCycle(3);
                 add16(pair(p, index), index);
                 return 11;
             case 2:
@@ -689,7 +696,8 @@ namespace R2SEGA8::Core
                 return 12;
             }
             case 2:
-                idle(7);
+                internalCycle(4);
+                internalCycle(3);
                 adcSbc16(pair(p), !q);
                 return 15;
             case 3:
@@ -710,10 +718,11 @@ namespace R2SEGA8::Core
                 return 8;
             }
             case 5:
-                s_.wz = s_.pc = pop();
-                s_.iff1 = s_.iff2;
+                // O periférico decodifica ED/4D após a busca M1, antes das leituras da pilha.
                 if (opcode == 0x4d)
                     access(CycleKind::Reti, 0, 0);
+                s_.wz = s_.pc = pop();
+                s_.iff1 = s_.iff2;
                 return 14;
             case 6:
             {
@@ -743,7 +752,7 @@ namespace R2SEGA8::Core
                 case 5:
                 {
                     const auto value = read(hl());
-                    idle(4);
+                    internalCycle(4);
                     Byte result;
                     if (y == 4)
                     {
@@ -785,7 +794,7 @@ namespace R2SEGA8::Core
             else if (z == 1) // CPI/CPD/CPIR/CPDR
             {
                 const auto value = read(hl());
-                idle(5);
+                internalCycle(5);
                 const Byte result = s_.a - value;
                 const bool half = ((s_.a ^ value ^ result) & 16) != 0;
                 const Byte adjusted = result - (half ? 1 : 0);
@@ -826,7 +835,7 @@ namespace R2SEGA8::Core
             }
             if (repeat && again)
             {
-                idle(5);
+                internalCycle(5);
                 s_.pc = static_cast<Word>(s_.pc - 2);
                 s_.wz = static_cast<Word>(s_.pc + 1);
                 flags((s_.f & ~(X | Y)) | (high(s_.pc) & (X | Y)));

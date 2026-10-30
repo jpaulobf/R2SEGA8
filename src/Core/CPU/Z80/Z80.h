@@ -87,6 +87,7 @@ namespace R2SEGA8::Core
             Input,
             Output,
             Internal,
+            InternalCycle,
             Interrupt,
             NMI,
             Reti
@@ -110,6 +111,9 @@ namespace R2SEGA8::Core
         bool irqLine_ = false, nmiLevel_ = false, nmiPending_ = false, waitLine_ = false, busRequestLine_ = false;
         std::jmp_buf yieldPoint_;
 
+        // Valida e instala registradores e linhas externas; restore também usa este caminho para fases incompletas.
+        void installState(const State &state);
+
         // Retoma cálculos puros até a próxima micro-operação ou o fim da instrução.
         void resume();
 
@@ -119,8 +123,11 @@ namespace R2SEGA8::Core
         // Agenda uma micro-operação; somente tick executa efeitos externos no barramento.
         std::uint8_t access(CycleKind kind, std::uint16_t address, unsigned length, std::uint8_t value = 0);
 
-        // Insere ciclos internos mantendo o último endereço do barramento.
+        // Acrescenta T-states internos ao M-cycle atual, mantendo o último endereço do barramento.
         void idle(unsigned length);
+
+        // Inicia um M-cycle interno independente, permitindo BUSACK antes dele e ignorando WAIT.
+        void internalCycle(unsigned length);
 
         // Agenda um ciclo de leitura de memória de três T-states.
         std::uint8_t read(std::uint16_t address);

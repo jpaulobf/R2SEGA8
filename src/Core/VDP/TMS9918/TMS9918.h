@@ -62,6 +62,7 @@ namespace R2SEGA8::Core
             std::uint8_t extraFetchIndex = 4, extraFetchPhase = 0;
             std::uint16_t spriteTargetLine = 0;
             bool spriteEvaluationStopped = true;
+            // Preferência do emulador: os testes de hardware solicitam explicitamente o limite de quatro.
             bool spriteUnlimited = true;
             bool evaluationSpriteUnlimited = false;
             std::uint16_t address = 0, dot = 0, line = 0;
@@ -74,7 +75,7 @@ namespace R2SEGA8::Core
         // Inicializa a VRAM zerada por convenção e aplica o reset do controlador.
         TMS9918();
 
-        // Reinicia registradores, fases e apresentação, preservando os bytes da VRAM.
+        // Reinicia registradores, fases e apresentação, preservando a VRAM e a preferência de sprites.
         void reset();
 
         // Avança um ciclo do cristal; dois ciclos formam um pixel do raster.
