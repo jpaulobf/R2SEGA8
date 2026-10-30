@@ -4,7 +4,7 @@
   <img src="https://github.com/jpaulobf/R2SEGA8/blob/main/assets/r2sega8.png" height="450"/>
 </div>
 
-
+<br>
 A Sega SG-1000, SC-3000, Master System and Game Gear emulator written from
 scratch in C++, developed alongside R2NES / R2BOY.
 
