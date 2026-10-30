@@ -39,7 +39,7 @@ int R2SEGA8::Systems::Engine::run()
                             static_cast<unsigned>(loaded.header()->offset), static_cast<unsigned>(loaded.header()->region),
                             static_cast<unsigned>(loaded.header()->sizeCode));
             if (board->hasMemoryMap())
-                std::puts("SG-1000: Z80 and TMS9918 backgrounds enabled (Graphics I/II, Text, Multicolor). Sprites, audio, input and cartridge banking are pending.");
+                std::puts("SG-1000: Z80 and TMS9918 video enabled (Graphics I/II, Text, Multicolor and sprites). Audio, input and cartridge banking are pending.");
             else
                 std::puts("ROM loaded; system memory mapping is not implemented yet.");
             std::fflush(stdout);

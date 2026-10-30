@@ -6,10 +6,7 @@ namespace R2SEGA8::Core
     namespace
     {
         // Aproximação RGB fixa da paleta NTSC; a cor zero revela o backdrop, sem vídeo externo.
-        constexpr std::uint8_t Palette[16][3] = {{0, 0, 0},     {0, 0, 0},       {33, 200, 66},   {94, 220, 120},
-                                                 {84, 85, 237}, {125, 118, 252}, {212, 82, 77},   {66, 235, 245},
-                                                 {252, 85, 84}, {255, 121, 120}, {212, 193, 84},  {230, 206, 128},
-                                                 {33, 176, 59}, {201, 91, 186},  {204, 204, 204}, {255, 255, 255}};
+        constexpr std::uint8_t Palette[16][3] = {{0, 0, 0}, {0, 0, 0}, {33, 200, 66}, {94, 220, 120}, {84, 85, 237}, {125, 118, 252}, {212, 82, 77}, {66, 235, 245}, {252, 85, 84}, {255, 121, 120}, {212, 193, 84}, {230, 206, 128}, {33, 176, 59}, {201, 91, 186}, {204, 204, 204}, {255, 255, 255}};
     } // namespace
 
     TMS9918::TMS9918()
@@ -26,6 +23,15 @@ namespace R2SEGA8::Core
         state_.masterPhase = state_.drawingImage = state_.pattern = state_.colors = 0;
         state_.secondControlByte = false;
         state_.masterTicks = state_.completedFrames = 0;
+        state_.evaluatedSprites.fill({});
+        state_.nextSprites.fill({});
+        state_.sprites.fill({});
+        state_.selectedSprites = state_.nextSpriteCount = state_.spriteCount = 0;
+        state_.extraFetchIndex = 4;
+        state_.extraFetchPhase = 0;
+        state_.spriteTargetLine = 0;
+        state_.spriteEvaluationStopped = true;
+        state_.evaluationSpriteLimit = state_.limitSpritesPerLine;
         for (auto &image : state_.images)
         {
             image.fill(0);
@@ -135,12 +141,174 @@ namespace R2SEGA8::Core
         return foreground ? state_.colors >> 4 : state_.colors & 15;
     }
 
+    void TMS9918::evaluateSprite(unsigned index)
+    {
+        if (state_.spriteEvaluationStopped || (state_.registers[1] & 0x50) != 0x40)
+            return;
+        const unsigned base = (state_.registers[5] & 0x7f) << 7;
+        const unsigned y = state_.vram[base + index * 4];
+        if (!(state_.status & 0x40))
+            state_.status = static_cast<std::uint8_t>((state_.status & 0xe0) | index);
+        if (y == 0xd0)
+        {
+            state_.spriteEvaluationStopped = true;
+            return;
+        }
+        const int top = (y > 0xe0 ? static_cast<int>(y) - 256 : static_cast<int>(y)) + 1;
+        const unsigned size = (state_.registers[1] & 2) ? 16 : 8, scale = (state_.registers[1] & 1) ? 2 : 1;
+        const int row = static_cast<int>(state_.spriteTargetLine) - top;
+        if (row < 0 || row >= static_cast<int>(size * scale))
+            return;
+        if (state_.selectedSprites == 4)
+        {
+            // 5S independe da opção visual: informa o primeiro quinto sprite e não gera INT.
+            if (!(state_.status & 0xc0))
+                state_.status = static_cast<std::uint8_t>((state_.status & 0xa0) | 0x40 | index);
+            if (state_.evaluationSpriteLimit)
+            {
+                state_.spriteEvaluationStopped = true;
+                return;
+            }
+        }
+        state_.evaluatedSprites[state_.selectedSprites++].index = static_cast<std::uint8_t>(index);
+    }
+
+    void TMS9918::fetchSprite(Sprite &sprite, unsigned phase, unsigned targetLine)
+    {
+        const auto &r = state_.registers;
+        const unsigned entry = ((r[5] & 0x7f) << 7) + sprite.index * 4;
+        switch (phase)
+        {
+        case 0:
+        {
+            sprite.y = state_.vram[entry];
+            sprite.size = (r[1] & 2) ? 16 : 8;
+            sprite.scale = (r[1] & 1) ? 2 : 1;
+            const int top = (sprite.y > 0xe0 ? int(sprite.y) - 256 : int(sprite.y)) + 1;
+            const int row = static_cast<int>(targetLine) - top;
+            sprite.visible = sprite.y != 0xd0 && row >= 0 && row < sprite.size * sprite.scale;
+            sprite.row = sprite.visible ? static_cast<std::uint8_t>(row / sprite.scale) : 0;
+            break;
+        }
+        case 1:
+            sprite.x = state_.vram[entry + 1];
+            break;
+        case 2:
+            sprite.name = state_.vram[entry + 2];
+            break;
+        case 3:
+            sprite.attributes = state_.vram[entry + 3];
+            break;
+        default:
+        {
+            // SIZE=1 ignora os dois bits baixos do nome; os quadrantes são A/B à esquerda, C/D à direita.
+            const unsigned name = sprite.name & (sprite.size == 16 ? 0xfc : 0xff);
+            const unsigned address = ((r[6] & 7) << 11) + name * 8 + sprite.row + (phase == 5 ? 16 : 0);
+            const auto pattern = state_.vram[address & 0x3fff];
+            if (phase == 4)
+                sprite.left = pattern;
+            else
+                sprite.right = pattern;
+            break;
+        }
+        }
+    }
+
+    void TMS9918::clockSprites()
+    {
+        const unsigned dot = state_.dot;
+        if (!dot)
+        {
+            state_.sprites = state_.nextSprites;
+            state_.spriteCount = state_.nextSpriteCount;
+        }
+        // Coordenadas do diagrama de temporização convertidas: dot 0 = ciclo 63 (primeiro pixel ativo).
+        // A seleção começa na margem anterior, continua durante a imagem e alimenta a linha seguinte.
+        if (dot == 316)
+        {
+            state_.spriteTargetLine = (state_.line + 2) % LinesPerFrame;
+            state_.selectedSprites = 0;
+            state_.extraFetchIndex = 4;
+            state_.extraFetchPhase = 0;
+            state_.evaluatedSprites.fill({});
+            state_.evaluationSpriteLimit = state_.limitSpritesPerLine;
+            state_.spriteEvaluationStopped = state_.spriteTargetLine >= Height;
+        }
+        if (dot >= 316 && dot <= 330 && !(dot & 1))
+            evaluateSprite((dot - 316) / 2);
+        else if (dot <= 240)
+        {
+            // Os primeiros oito Y são consecutivos; os demais cedem um slot de cada quatro à CPU.
+            const unsigned group = dot / 32, slot = dot % 32;
+            if (slot == 0 || slot == 8 || slot == 16)
+                evaluateSprite(8 + group * 3 + slot / 8);
+        }
+
+        // Extensão opcional: os sprites 5..32 usam um fetcher lógico separado, um byte por dot.
+        // Ele não ocupa slots físicos adicionais nem modifica a cadência dos quatro sprites originais.
+        if (!state_.evaluationSpriteLimit && state_.extraFetchIndex < state_.selectedSprites)
+        {
+            fetchSprite(state_.evaluatedSprites[state_.extraFetchIndex], state_.extraFetchPhase, state_.spriteTargetLine);
+            if (++state_.extraFetchPhase == 6)
+            {
+                state_.extraFetchPhase = 0;
+                ++state_.extraFetchIndex;
+            }
+        }
+
+        const unsigned target = (state_.line + 1) % LinesPerFrame;
+        if (dot == 250)
+        {
+            state_.nextSprites = state_.evaluatedSprites;
+            state_.nextSpriteCount = target < Height && state_.spriteTargetLine == target ? state_.selectedSprites : 0;
+        }
+        // Y/X/nome/cor/padrão esquerdo/direito são buscados separadamente, inclusive o segundo padrão de SIZE=0.
+        constexpr unsigned FetchDots[4][6] = {
+            {250, 252, 254, 256, 258, 260}, {262, 264, 266, 268, 270, 272}, {274, 276, 288, 290, 292, 294}, {296, 298, 300, 302, 304, 306}};
+        for (unsigned index = 0; index < 4 && index < state_.nextSpriteCount; ++index)
+            for (unsigned phase = 0; phase < 6; ++phase)
+                if (dot == FetchDots[index][phase])
+                    fetchSprite(state_.nextSprites[index], phase, target);
+    }
+
+    std::uint8_t TMS9918::spriteColor()
+    {
+        unsigned overlaps = 0;
+        std::uint8_t color = 0;
+        for (unsigned index = 0; index < state_.spriteCount; ++index)
+        {
+            const auto &sprite = state_.sprites[index];
+            if (!sprite.visible)
+                continue;
+            const int left = sprite.x - ((sprite.attributes & 0x80) ? 32 : 0);
+            const int offset = static_cast<int>(state_.dot) - left;
+            if (offset < 0 || offset >= sprite.size * sprite.scale)
+                continue;
+            const unsigned column = static_cast<unsigned>(offset) / sprite.scale;
+            const auto pattern = column < 8 ? sprite.left : sprite.right;
+            if (!(pattern & (0x80 >> (column & 7))))
+                continue;
+            ++overlaps; // A cor transparente participa da colisão, mas não esconde o próximo sprite.
+            if (!color)
+                color = sprite.attributes & 15;
+        }
+        if (overlaps > 1)
+            state_.status |= 0x20;
+        return color;
+    }
+
     void TMS9918::drawPixel()
     {
         const auto backdrop = state_.registers[7] & 15;
         unsigned color = (state_.registers[1] & 0x40) ? backgroundColor() : backdrop;
         if (!color)
             color = backdrop;
+        if ((state_.registers[1] & 0x50) == 0x40)
+        {
+            const auto sprite = spriteColor();
+            if (sprite)
+                color = sprite;
+        }
         auto &image = state_.images[state_.drawingImage];
         const unsigned offset = (state_.line * Width + state_.dot) * 4;
         image[offset] = Palette[color][0];
@@ -155,6 +323,7 @@ namespace R2SEGA8::Core
         state_.masterPhase ^= 1;
         if (state_.masterPhase)
             return;
+        clockSprites();
         if (state_.line < Height && state_.dot < Width)
             drawPixel();
         if (++state_.dot == DotsPerLine)
@@ -183,6 +352,14 @@ namespace R2SEGA8::Core
         if (state.address >= 0x4000 || state.dot >= DotsPerLine || state.line >= LinesPerFrame || state.masterPhase > 1 ||
             state.drawingImage > 1)
             throw std::invalid_argument("Invalid TMS9918 state.");
+        if (state.selectedSprites > 32 || state.nextSpriteCount > 32 || state.spriteCount > 32 || state.extraFetchIndex < 4 ||
+            state.extraFetchIndex > 32 || state.extraFetchPhase > 5 || state.spriteTargetLine >= LinesPerFrame)
+            throw std::invalid_argument("Invalid TMS9918 sprite pipeline state.");
+        for (const auto *bank : {&state.evaluatedSprites, &state.nextSprites, &state.sprites})
+            for (const auto &sprite : *bank)
+                if (sprite.index > 31 || sprite.row > 15 || (sprite.size != 8 && sprite.size != 16) ||
+                    (sprite.scale != 1 && sprite.scale != 2))
+                    throw std::invalid_argument("Invalid TMS9918 sprite fetch state.");
         state_ = state;
     }
 
@@ -190,4 +367,4 @@ namespace R2SEGA8::Core
     {
         return {state_.images[state_.drawingImage ^ 1].data(), Width, Height, Width * 4, state_.completedFrames};
     }
-} // namespace R2SEGA8::Core
+}
