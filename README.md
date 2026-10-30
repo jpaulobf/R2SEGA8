@@ -4,20 +4,36 @@
   <img src="https://github.com/jpaulobf/R2SEGA8/blob/main/assets/r2sega8.png" height="450"/>
 </div>
 
+
 A Sega SG-1000, SC-3000, Master System and Game Gear emulator written from
 scratch in C++, developed alongside R2NES / R2BOY.
 
-The project is in early development. You can load ROMs, inspect memory and
+The project is in early development. You can load ROMs and
 run the SG-1000 CPU with backgrounds and sprites. Video support is
-incomplete, and audio and controls are still being developed; games are not
-fully supported yet.
+incomplete and audio is still being developed; games are not fully supported yet.
 
 ## Opening a ROM
 
-Use **File > Open**, **Ctrl+O**, or drag a file into the window. Select a ROM,
-confirm the system and click **Load ROM**.
+Use **File > Open** or **Ctrl+O**, then click a ROM to load it immediately.
+Dragging a ROM into the window also loads it directly.
 
-Open raw `.sg`, `.sc`, `.sms`, `.gg` or `.bin` files. Extract ZIP archives first.
+The extension selects the system: `.sg`, `.sc`, `.sms` or `.gg` (case-insensitive).
+ZIP loading and automatic identification of `.bin` files will come later.
+
+## Display
+
+Starts at **3X**. Choose **1X–5X** in **Display**, or press **Ctrl+1–5**.
+The video fills the available area while keeping its aspect ratio.
+Maximizing is allowed; manual resizing is blocked.
+
+## Controls
+
+Use **WASD or arrow keys** to move, **K/J** for buttons **1/2**, and **Enter**
+for the SG-1000 Pause/Hold button. **I/U** provide turbo for buttons **1/2**.
+
+SDL-compatible gamepads are detected automatically, including connection and
+removal while running. Two players are supported. See the [input guide](docs/Input.md)
+for gamepad positions and keyboard mappings.
 
 ## Building
 
@@ -38,6 +54,7 @@ The application is generated in `bin/` (or `bin/Debug/`). See the
 - [Architecture and development roadmap](docs/Architecture.md)
 - [Z80 implementation and validation](docs/Z80.md)
 - [Initial TMS9918 video and demo ROM](docs/TMS9918.md)
+- [Display options](docs/Display.md)
 - [Changelog](CHANGELOG.md)
 
 ## License
