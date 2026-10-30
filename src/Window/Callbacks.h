@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/SystemType.h"
+#include "Common/AudioSettings.h"
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -39,11 +40,26 @@ namespace R2SEGA8::Window
         // Solicita carregamento imediato com o sistema da extensão; falhas mantêm o diálogo aberto.
         OpenRom openRom;
 
+        // Consulta a presença de uma ROM para habilitar as ações de execução.
+        std::function<bool()> hasRom;
+
+        // Solicita a reinicialização completa da máquina com a ROM atual.
+        std::function<void()> reset;
+
+        // Solicita a liberação da máquina ativa, mantendo a janela aberta.
+        std::function<void()> unload;
+
         // Consulta os bytes para apresentação, antes de emitir ações que possam invalidá-los.
         std::function<MemoryView()> memory;
 
         // Consulta o quadro para copiar à textura antes de emitir ações que possam invalidar seus bytes.
         std::function<FrameView()> frame;
+
+        // Consulta os ajustes de áudio mantidos pela aplicação, sem conhecer o mixer ou a placa.
+        std::function<Common::AudioSettings()> audioSettings;
+
+        // Publica ativação e volumes escolhidos no menu Audio.
+        std::function<void(const Common::AudioSettings &)> setAudioSettings;
 
         // Encaminha eventos do host e informa se a interface permite entrada de jogo neste instante.
         std::function<void(const SDL_Event &, bool)> inputEvent;

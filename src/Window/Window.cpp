@@ -119,8 +119,7 @@ namespace R2SEGA8::Window
                         const auto title = std::string("R2SEGA8 | ") + path.filename().u8string();
                         callbacks.openRom(path, type);
                         // Atualiza somente após a aplicação confirmar o carregamento sem lançar exceção.
-                        SDL_SetWindowTitle(window, title.c_str());
-                    }),
+                        SDL_SetWindowTitle(window, title.c_str()); }),
               nativeSize(size)
         {
             const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max() / 10);
@@ -135,6 +134,23 @@ namespace R2SEGA8::Window
             running = false;
             if (callbacks.exit)
                 callbacks.exit();
+        }
+
+        // Solicita reinicialização somente quando a aplicação informa uma ROM ativa.
+        void requestReset()
+        {
+            if (callbacks.reset && callbacks.hasRom && callbacks.hasRom())
+                callbacks.reset();
+        }
+
+        // Descarrega pela aplicação e restaura o título após a conclusão da ação.
+        void requestUnload()
+        {
+            if (callbacks.unload && callbacks.hasRom && callbacks.hasRom())
+            {
+                callbacks.unload();
+                SDL_SetWindowTitle(window, "R2SEGA8");
+            }
         }
         // Copia um quadro neutro para a textura; os bytes do callback não escapam desta chamada.
         void drawFrame(FrameView frame)
@@ -301,6 +317,9 @@ namespace R2SEGA8::Window
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(state.window)))
                 state.requestExit();
+            if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F12 &&
+                !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)) && !state.files.isOpen())
+                state.requestReset();
             if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.mod & SDL_KMOD_CTRL) &&
                 !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI)) && event.key.key >= SDLK_1 && event.key.key <= SDLK_5)
                 state.resizeDisplay(static_cast<unsigned>(event.key.key - SDLK_1 + 1));
@@ -347,6 +366,11 @@ namespace R2SEGA8::Window
                 {
                     if (ImGui::MenuItem("Open...", "Ctrl+O"))
                         state.files.requestOpen();
+                    const bool loaded = state.callbacks.hasRom && state.callbacks.hasRom();
+                    if (ImGui::MenuItem("Reset", "F12", false, loaded && static_cast<bool>(state.callbacks.reset)))
+                        state.requestReset();
+                    if (ImGui::MenuItem("Unload", nullptr, false, loaded && static_cast<bool>(state.callbacks.unload)))
+                        state.requestUnload();
                     ImGui::Separator();
                     if (ImGui::MenuItem("Exit"))
                         state.requestExit();
@@ -362,6 +386,29 @@ namespace R2SEGA8::Window
                         if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
                             state.pendingDisplayScale = scale;
                     }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Audio", state.callbacks.audioSettings && state.callbacks.setAudioSettings))
+                {
+                    auto settings = state.callbacks.audioSettings();
+                    const char *labels[] = {"Master Sound", "Tone 1", "Tone 2", "Tone 3", "Noise"};
+                    bool changed = false;
+                    // Mantém o menu aberto para ajustar vários canais, como no mixer do R2BOY.
+                    ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
+                    for (unsigned index = 0; index < 5; ++index)
+                    {
+                        if (index)
+                            ImGui::Separator();
+                        ImGui::PushID(static_cast<int>(index));
+                        auto &control = index ? settings.channels[index - 1] : settings.master;
+                        changed |= ImGui::MenuItem(labels[index], nullptr, &control.enabled);
+                        ImGui::SetNextItemWidth(160.0f);
+                        changed |= ImGui::SliderInt("Volume", &control.volume, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::PopID();
+                    }
+                    ImGui::PopItemFlag();
+                    if (changed)
+                        state.callbacks.setAudioSettings(settings);
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenuBar();
