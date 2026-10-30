@@ -1,7 +1,7 @@
 # R2SEGA8
 
 <div align="center">
-  <img src="https://github.com/jpaulobf/R2SEGA8/blob/main/assets/r2sega8.png" height="450"/>
+  <img src="https://github.com/jpaulobf/R2SEGA8/blob/main/assets/r2sega8.png" height="380"/>
 </div>
 
 <br>
