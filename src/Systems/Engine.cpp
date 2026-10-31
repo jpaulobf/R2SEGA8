@@ -2,14 +2,18 @@
 #include "Audio.h"
 #include "BoardFactory.h"
 #include "Core/Audio/SN76489/SN76489.h"
-#include "Input.h"
+#include "FrameCounter.h"
 #include "FramePacer.h"
+#include "Input.h"
+#include "PauseState.h"
 #include "Window/Window.h"
-#include <chrono>
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <iostream>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -20,9 +24,28 @@ int R2SEGA8::Systems::Engine::run()
         std::unique_ptr<R2SEGA8::Core::Board> board;
         using Clock = std::chrono::steady_clock;
         R2SEGA8::Systems::FramePacer pacer;
+        R2SEGA8::Systems::FrameCounter frameCounter;
         bool running = true;
         bool inputEnabled = false;
         bool resetAudio = false;
+        bool resetTiming = false;
+        R2SEGA8::Systems::PauseState pause;
+        bool emulationPaused = false;
+        auto pauseStarted = Clock::now();
+        // Uma nova máquina não herda o tempo de pausa usado na medição da máquina anterior.
+        const auto resetFPS = [&]()
+        {
+            pauseStarted = Clock::now();
+            frameCounter.reset(pauseStarted);
+        };
+        enum class LoopMode
+        {
+            Hardware,
+            VSync,
+            FastForward
+        };
+        LoopMode loopMode = LoopMode::Hardware;
+        R2SEGA8::Common::ExecutionSettings executionSettings;
         R2SEGA8::Common::AudioSettings audioSettings;
         R2SEGA8::Systems::Input input;
         R2SEGA8::Window::Callbacks callbacks;
@@ -32,6 +55,7 @@ int R2SEGA8::Systems::Engine::run()
             next->setAudioSettings(audioSettings);
             board = std::move(next);
             resetAudio = true;
+            resetFPS();
             input.clear();
             const auto &loaded = board->cartridge();
             const auto path = loaded.path().u8string();
@@ -73,21 +97,36 @@ int R2SEGA8::Systems::Engine::run()
             board = std::move(next);
             input.clear();
             resetAudio = true;
+            resetFPS();
         };
         callbacks.unload = [&]()
         {
             board.reset();
             input.clear();
             resetAudio = true;
+            resetFPS();
         };
         callbacks.audioSettings = [&]()
         { return audioSettings; };
+        callbacks.togglePause = [&]()
+        {
+            if (board)
+                pause.toggleManual();
+        };
+        callbacks.menuPause = [&](bool paused)
+        { pause.setMenuPaused(paused); };
         callbacks.setAudioSettings = [&](const R2SEGA8::Common::AudioSettings &settings)
         {
             audioSettings = settings;
             if (board)
                 board->setAudioSettings(audioSettings);
         };
+        callbacks.executionSettings = [&]()
+        { return executionSettings; };
+        callbacks.fps = [&]()
+        { return frameCounter.fps(); };
+        callbacks.setExecutionSettings = [&](const R2SEGA8::Common::ExecutionSettings &settings)
+        { executionSettings = settings; };
         callbacks.frame = [&]() -> R2SEGA8::Window::FrameView
         {
             if (!board)
@@ -114,20 +153,69 @@ int R2SEGA8::Systems::Engine::run()
         std::vector<float> audioSamples;
         if (!audio.initialize(R2SEGA8::Core::SN76489::DefaultSampleRate))
             std::cerr << "Audio: Playback unavailable: " << SDL_GetError() << '\n';
-        // Limpa ações dos eventos e também as ações emitidas durante o desenho dos menus.
-        const auto clearAudio = [&]()
+        // Consulta se a placa fornece uma razão de clocks válida para o limitador nativo.
+        const auto timedBoard = [&]()
+        { return board && board->clockFrequency() && board->cyclesPerFrame(); };
+        // Apenas mudanças da pausa efetiva descartam áudio e prazos; fechar menu não desfaz Pause/Break.
+        const auto synchronizePause = [&]()
         {
-            if (!resetAudio)
+            const bool next = pause.paused();
+            if (next == emulationPaused)
                 return;
-            if (!audio.clear())
+            const auto now = Clock::now();
+            if (next)
+                pauseStarted = now;
+            else
+                frameCounter.excludePause(now - pauseStarted);
+            emulationPaused = next;
+            input.clear();
+            if (board)
+                board->setInput({});
+            resetAudio = resetTiming = true;
+        };
+        // As preferências sobrevivem ao TAB: somente o modo efetivo suspende VSync e saída de áudio.
+        const auto synchronizeLoop = [&]()
+        {
+            synchronizePause();
+            const bool minimized = window.isMinimized();
+            const bool fast = executionSettings.fastForwardEnabled && inputEnabled && !emulationPaused && !minimized &&
+                              input.isFastForwardPressed() && timedBoard();
+            auto nextMode = fast ? LoopMode::FastForward : executionSettings.vsync && !minimized ? LoopMode::VSync
+                                                                                                 : LoopMode::Hardware;
+            if (nextMode == loopMode)
+                return;
+            if (!window.setVSync(nextMode == LoopMode::VSync))
             {
-                std::cerr << "Audio: Playback disabled: " << SDL_GetError() << '\n';
-                audio.shutdown();
+                // Um backend sem VSync mantém a execução pelo clock original, sem encerrar a sessão.
+                if (nextMode != LoopMode::VSync)
+                    throw std::runtime_error(std::string("Unable to disable VSync: ") + SDL_GetError());
+                std::cerr << "Display: VSync unavailable: " << SDL_GetError() << '\n';
+                executionSettings.vsync = false;
+                nextMode = LoopMode::Hardware;
             }
-            audioSamples.clear();
-            const bool timed = board && board->clockFrequency() && board->cyclesPerFrame();
+            // Descarta PCM anterior tanto na entrada quanto na saída do avanço rápido.
+            if (loopMode == LoopMode::FastForward || nextMode == LoopMode::FastForward)
+                resetAudio = true;
+            loopMode = nextMode;
+            resetTiming = true;
+        };
+        // Consome ações dos eventos e também as emitidas pelos menus; nenhum modo herda prazos antigos.
+        const auto resetRuntime = [&]()
+        {
+            if (!resetAudio && !resetTiming)
+                return;
+            if (resetAudio)
+            {
+                if (!audio.clear())
+                {
+                    std::cerr << "Audio: Playback disabled: " << SDL_GetError() << '\n';
+                    audio.shutdown();
+                }
+                audioSamples.clear();
+            }
+            const bool timed = timedBoard();
             pacer.reset(timed ? board->clockFrequency() : 60, timed ? board->cyclesPerFrame() : 1, Clock::now());
-            resetAudio = false;
+            resetAudio = resetTiming = false;
         };
         // A sessão termina antes de a janela chamar SDL_Quit, inclusive durante exceções.
         const auto stopInput = [](R2SEGA8::Systems::Input *session)
@@ -139,36 +227,62 @@ int R2SEGA8::Systems::Engine::run()
         {
             if (!window.processEvents())
                 break;
-            clearAudio();
-            const auto buttons = input.update(inputEnabled);
-            if (board)
+            synchronizeLoop();
+            resetRuntime();
+            const auto buttons = input.update(inputEnabled && !emulationPaused);
+            if (board && !emulationPaused)
                 board->setInput(buttons);
-            pacer.advance();
-            if (board && board->clockFrequency() && board->cyclesPerFrame())
+            if (loopMode == LoopMode::Hardware)
+                pacer.advance();
+            if (timedBoard() && !emulationPaused)
             {
-                // Cada lote corresponde a um quadro físico completo. Recupera até quatro quadros
-                // antes de desenhar, sem descartar clocks por pequenos atrasos do sistema operacional.
-                for (unsigned frame = 0; frame < 4; ++frame)
+                // Sem limite, vários quadros por apresentação reduzem a dependência do custo do renderer.
+                // O modo nativo continua recuperando até quatro quadros; VSync apresenta cada quadro.
+                const unsigned framesPerBatch = loopMode == LoopMode::FastForward ? 8 : 4;
+                for (unsigned frame = 0; frame < framesPerBatch; ++frame)
                 {
+                    if (frame && loopMode == LoopMode::FastForward)
+                    {
+                        // Consulta TAB e ações entre quadros, sem esperar a apresentação do lote inteiro.
+                        if (!window.processEvents())
+                        {
+                            running = false;
+                            break;
+                        }
+                        synchronizeLoop();
+                        resetRuntime();
+                        if (emulationPaused || loopMode != LoopMode::FastForward || !timedBoard())
+                            break;
+                        board->setInput(input.update(inputEnabled));
+                    }
                     board->runCycles(board->cyclesPerFrame());
+                    frameCounter.record(Clock::now());
                     board->takeAudio(audioSamples);
-                    if (!audio.submit(audioSamples.data(), audioSamples.size()))
+                    // O PSG continua avançando no fast-forward; apenas a saída PCM é descartada.
+                    if (loopMode != LoopMode::FastForward && !audio.submit(audioSamples.data(), audioSamples.size()))
                     {
                         std::cerr << "Audio: Playback disabled: " << SDL_GetError() << '\n';
                         audio.shutdown();
                     }
-                    if (frame == 3 || Clock::now() < pacer.deadline())
+                    if (loopMode == LoopMode::FastForward)
+                        continue;
+                    if (loopMode == LoopMode::VSync || frame == 3 || Clock::now() < pacer.deadline())
                         break;
                     pacer.advance();
                 }
             }
+            if (!running)
+                break;
             window.render();
-            clearAudio();
+            synchronizeLoop();
+            resetRuntime();
+            if (loopMode != LoopMode::Hardware)
+                continue;
             std::this_thread::sleep_until(pacer.deadline());
             // Após uma pausa longa (arrastar janela, depurador), não executa uma fila ilimitada de quadros antigos.
             if (Clock::now() > pacer.deadline() + std::chrono::milliseconds(250))
             {
-                const bool timed = board && board->clockFrequency() && board->cyclesPerFrame();
+                const bool timed = timedBoard();
                 pacer.reset(timed ? board->clockFrequency() : 60, timed ? board->cyclesPerFrame() : 1, Clock::now());
             }
         }

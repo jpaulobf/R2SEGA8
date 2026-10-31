@@ -7,7 +7,7 @@ namespace R2SEGA8::Systems
     {
     public:
         // Inicializa a sessão e executa eventos, carregamento, emulação e apresentação.
-        // Respeita a razão de clocks por quadro da placa, cedendo a CPU até o próximo prazo.
+        // Usa o clock nativo, a espera vertical ou TAB sem limite; o avanço rápido silencia a saída de áudio.
         // Retorna zero ao encerrar normalmente ou um após registrar uma falha no console.
         int run();
     };
