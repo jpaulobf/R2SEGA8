@@ -154,6 +154,74 @@ namespace
         check(!(vdp->state().status & 0x20), "Only set pattern bits collide");
     }
 
+    // Exercita coincidências horizontais na borda descritas pelo manual da TI.
+    void offscreenCollisions()
+    {
+        for (unsigned options = 0; options < 4; ++options)
+            for (bool unlimited : {false, true})
+            {
+                auto vdp = scene(options);
+                vdp->setSpriteUnlimited(unlimited);
+                solid(*vdp);
+                sprite(*vdp, 0, 39, 0, 0, 0x8f); // X=-32; nenhum pixel chega à imagem.
+                sprite(*vdp, 1, 39, 4, 0, 0x80); // X=-28 e cor transparente também colide.
+                upload(*vdp, SAT + 8, {0xd0});
+                warm(*vdp);
+                vdp->runMasterTicks(39ULL * VDP::MasterTicksPerLine + 314 * 2);
+                check(!(vdp->state().status & 0x20), "Left-border collision must not occur before the overlap");
+                vdp->tick();
+                check(!(vdp->state().status & 0x20), "Left-border collision must wait for the second master tick");
+                const auto halfDot = std::make_unique<VDP::State>(vdp->state());
+                vdp->tick();
+                check(vdp->readStatus() & 0x20, "Completely offscreen left sprites must participate in collision");
+                vdp->restore(*halfDot);
+                vdp->tick();
+                check(vdp->readStatus() & 0x20, "Restoring between master ticks must preserve the offscreen collision phase");
+                vdp->runMasterTicks(2);
+                check(vdp->state().status & 0x20, "Another offscreen overlap must relatch status after a read");
+
+                vdp = scene(options);
+                vdp->setSpriteUnlimited(unlimited);
+                upload(*vdp, Patterns, {0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f});
+                sprite(*vdp, 0, 39, 255, 0, 15);
+                sprite(*vdp, 1, 39, 255, 0, 2);
+                upload(*vdp, SAT + 8, {0xd0});
+                warm(*vdp);
+                const unsigned firstRight = options & 1 ? 257 : 256;
+                vdp->runMasterTicks(40ULL * VDP::MasterTicksPerLine + firstRight * 2);
+                check(!(vdp->state().status & 0x20), "Clear visible pattern bit must not collide at X=255");
+                vdp->tick();
+                check(!(vdp->state().status & 0x20), "Right-border collision must wait for the second master tick");
+                vdp->tick();
+                check(vdp->state().status & 0x20, "First overlap beyond X=255 must latch collision");
+            }
+        for (bool unlimited : {false, true})
+        {
+            auto vdp = scene();
+            vdp->setSpriteUnlimited(unlimited);
+            solid(*vdp);
+            sprite(*vdp, 0, 39, 0, 0, 0x8f);
+            for (unsigned i = 1; i < 4; ++i)
+                sprite(*vdp, i, 39, static_cast<Byte>(40 * i), 0, 15);
+            sprite(*vdp, 4, 39, 4, 0, 0x82);
+            upload(*vdp, SAT + 20, {0xd0});
+            warm(*vdp);
+            vdp->runMasterTicks(39ULL * VDP::MasterTicksPerLine + 315 * 2);
+            check(bool(vdp->state().status & 0x20) == unlimited,
+                  "An offscreen fifth sprite collides only when the emulator's unlimited option selects it");
+            check(vdp->state().status & 0x40, "The fifth sprite must still report overflow in both profiles");
+        }
+        auto vdp = scene();
+        upload(*vdp, Patterns, {0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80});
+        upload(*vdp, Patterns + 8, {0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40});
+        sprite(*vdp, 0, 39, 0, 0, 0x8f);
+        sprite(*vdp, 1, 39, 0, 1, 0x82);
+        upload(*vdp, SAT + 8, {0xd0});
+        warm(*vdp);
+        vdp->runMasterTicks(40ULL * VDP::MasterTicksPerLine);
+        check(!(vdp->state().status & 0x20), "Offscreen rectangles must not collide when their pattern bits do not overlap");
+    }
+
     // Testa o quinto sprite, índice real na SAT, descarte, retenção e bloqueio por VBlank pendente.
     void overflow()
     {
@@ -351,6 +419,7 @@ int main()
     {
         geometry();
         collisions();
+        offscreenCollisions();
         overflow();
         modes();
         snapshot();

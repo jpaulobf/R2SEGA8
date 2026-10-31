@@ -72,6 +72,22 @@ namespace
                 check(board->input(0xdc) == even && board->input(0xdd) == odd, "Controller bit layout or active-low conversion");
             }
         board->setInput({mask(Button::Up) | mask(Button::A), mask(Button::Right) | mask(Button::B)});
+        // As portas sem resposta implementada usam FF por convenção; leituras não acionam PSG ou VDP.
+        const auto initialAddress = board->vdp().state().address;
+        const auto initialLatch = board->psg().state().latch;
+        for (unsigned port = 0; port < 0x80; ++port)
+            for (unsigned high : {0u, 0xa500u})
+                check(board->input(static_cast<std::uint16_t>(high | port)) == 0xff,
+                      "Undriven and write-only ports must follow the current FF fallback");
+        check(board->vdp().state().address == initialAddress && board->psg().state().latch == initialLatch,
+              "Undriven reads must not access the VDP or PSG");
+        // Escrever nas faixas não decodificadas não altera registradores ou sinais dos periféricos.
+        for (unsigned port = 0; port < 0x100; ++port)
+            if (port < 0x40 || port >= 0xc0)
+                board->output(static_cast<std::uint16_t>(0xa500 | port), 0x90);
+        check(board->vdp().state().address == initialAddress && !board->vdp().state().secondControlByte &&
+                  board->psg().state().latch == initialLatch && !board->cpu().state().wait,
+              "Writes to undecoded I/O must not alter the VDP, PSG or WAIT");
         for (unsigned port = 0xc0; port <= 0xff; ++port)
             check(board->input(static_cast<std::uint16_t>(0xa500 | port)) == (port & 1 ? 0xf5 : 0xee),
                   "Controller mirror or upper I/O address decoding");

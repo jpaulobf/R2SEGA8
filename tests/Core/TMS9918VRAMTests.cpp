@@ -197,6 +197,65 @@ namespace
         }
     }
 
+    // Compara os atrasos do modelo com os limites aproximados de acesso da tabela 2-2 da TI.
+    void documentedAccessWindows()
+    {
+        for (unsigned mode : {0u, 2u, 4u, 1u, 8u, 9u})
+        {
+            // 8 = tela apagada; 9 = intervalo vertical, ambos com limite nominal de 2 microssegundos.
+            auto vdp = scene(mode == 9 ? 0 : mode, mode != 8);
+            auto state = std::make_unique<VDP::State>(vdp->state());
+            state->address = 0x3800;
+            if (mode == 9)
+                state->line = 192;
+            vdp->restore(*state);
+            vdp->runMasterTicks(VDP::MasterTicksPerLine * 2ULL);
+            const unsigned maxTicks = mode == 0 || mode == 2 ? 86 : mode == 4 ? 38 : mode == 1 ? 34 : 22;
+            unsigned minimum = 110, maximum = 0, beyond = 0, worstPhase = 0, activeBeyond = 0, worstDot = 0;
+            for (unsigned phase = 0; phase < VDP::MasterTicksPerLine; ++phase)
+            {
+                *state = vdp->state();
+                for (auto value : {0xa5, 0x5a})
+                {
+                    const auto requestDot = vdp->state().dot;
+                    const auto requestLine = vdp->state().line;
+                    vdp->writeData(static_cast<Byte>(value));
+                    unsigned elapsed = 0;
+                    while (vdp->state().cpuAccessPending && elapsed < 110)
+                    {
+                        vdp->tick();
+                        ++elapsed;
+                    }
+                    check(!vdp->state().cpuAccessPending, "A VRAM transfer failed to complete within 110 master clocks");
+                    minimum = std::min(minimum, elapsed);
+                    if (elapsed > maximum)
+                    {
+                        maximum = elapsed;
+                        worstPhase = phase;
+                        worstDot = requestDot;
+                    }
+                    if (elapsed > maxTicks)
+                    {
+                        ++beyond;
+                        if (requestDot < VDP::Width && requestLine < VDP::Height)
+                            ++activeBeyond;
+                    }
+                }
+                check(vdp->state().vram[0x3800] == 0xa5 && vdp->state().vram[0x3801] == 0x5a,
+                      "Waited VRAM writes must arrive in sequence and increment the address");
+                vdp->restore(*state);
+                vdp->tick();
+            }
+            std::cout << "VRAM mode " << mode << ": " << minimum << ".." << maximum << " master clocks; TI nominal "
+                      << maxTicks << ", samples above: " << beyond << " (active " << activeBeyond << "), worst phase: "
+                      << worstPhase << ", dot: " << worstDot << "\n";
+            // Multicolor tem uma divergência conhecida entre a tabela da TI e o diagrama de slots;
+            // conserva a medição visível sem fixar como teste uma interpretação ainda não verificada.
+            if (mode != 4)
+                check(!beyond, "The emulated access exceeded the corresponding nominal TI window");
+        }
+    }
+
     // Usa uma escrita real da CPU entre nome e cor/padrão para conferir os dados efetivamente apresentados.
     void backgroundRace()
     {
@@ -277,6 +336,7 @@ int main()
         ports();
         tooFast();
         slots();
+        documentedAccessWindows();
         backgroundRace();
         snapshots();
         std::cout << "TMS9918 VRAM arbitration, CPU delay/overwrite, slot maps, background fetch races and snapshots passed.\n";

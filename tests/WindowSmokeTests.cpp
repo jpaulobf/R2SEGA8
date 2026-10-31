@@ -1,3 +1,5 @@
+#include "Systems/Input.h"
+#include "Systems/PauseState.h"
 #include "Window/Window.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -146,6 +148,16 @@ namespace
         window.render();
         window.render();
         checkScale(native, 2);
+        maximized.type = SDL_EVENT_WINDOW_MINIMIZED;
+        SDL_PushEvent(&maximized);
+        window.processEvents();
+        if (!window.isMinimized())
+            throw std::runtime_error("Minimization must tell the caller that presentation is suspended");
+        maximized.type = SDL_EVENT_WINDOW_RESTORED;
+        SDL_PushEvent(&maximized);
+        window.processEvents();
+        if (window.isMinimized())
+            throw std::runtime_error("Restoration must allow presentation synchronization again");
         key.key.key = SDLK_3;
         SDL_PushEvent(&key);
         window.processEvents();
@@ -153,6 +165,130 @@ namespace
         window.render();
         checkScale(native, 3);
     }
+    // Aciona uma opção dos menus reais, mantendo o teste independente das coordenadas do desktop.
+    void menuOption(R2SEGA8::Window::Window &window, const char *menuName, const char *option)
+    {
+        const auto *main = ImGui::FindWindowByName("R2SEGA8");
+        const auto menuBar = ImHashStr("##MenuBar", 0, main->ID);
+        ImGui::ActivateItemByID(ImHashStr(menuName, 0, menuBar));
+        window.render();
+        const auto *menu = ImGui::FindWindowByName("###Menu_00");
+        if (!menu || !menu->Active)
+            throw std::runtime_error(std::string(menuName) + " menu did not open");
+        ImGui::ActivateItemByID(ImHashStr(option, 0, menu->ID));
+        window.render();
+        window.render();
+    }
+
+    // Menus publicam preferências por callback; a aplicação suspende VSync sem apagar a escolha do usuário.
+    void executionOptions(R2SEGA8::Window::Window &window, SDL_Window *native, const R2SEGA8::Common::ExecutionSettings &settings,
+                          const unsigned &changes)
+    {
+        auto *renderer = SDL_GetRenderer(native);
+        int vsync = -1;
+        const bool initialVSync = settings.vsync;
+        if (!renderer || !SDL_GetRenderVSync(renderer, &vsync) || vsync != 0 || !settings.fastForwardEnabled)
+            throw std::runtime_error("Window must start without renderer VSync and expose fast-forward availability");
+        menuOption(window, "Display", "VSync");
+        if (settings.vsync == initialVSync || !settings.fastForwardEnabled || changes != 1 ||
+            !SDL_GetRenderVSync(renderer, &vsync) || vsync != 0)
+            throw std::runtime_error("Display VSync must publish the preference through the callback");
+        menuOption(window, "Display", "VSync");
+        unsigned expectedChanges = 2;
+        if (settings.vsync != initialVSync || changes != expectedChanges)
+            throw std::runtime_error("Display VSync must toggle back through the callback");
+        if (!settings.vsync)
+        {
+            menuOption(window, "Display", "VSync");
+            ++expectedChanges;
+        }
+        // Drivers sem sincronização vertical podem rejeitar a ativação; a desativação continua obrigatória.
+        if (window.setVSync(true) && (!SDL_GetRenderVSync(renderer, &vsync) || vsync != 1))
+            throw std::runtime_error("Successful VSync activation must configure the native renderer");
+        if (!window.setVSync(false) || !SDL_GetRenderVSync(renderer, &vsync) || vsync != 0 || !settings.vsync)
+            throw std::runtime_error("Temporary VSync suppression must preserve the menu preference");
+        menuOption(window, "Hacks", "Enable Fast-Forward");
+        ++expectedChanges;
+        if (settings.fastForwardEnabled || !settings.vsync || changes != expectedChanges)
+            throw std::runtime_error("Hacks must disable fast-forward without changing VSync");
+        menuOption(window, "Hacks", "Enable Fast-Forward");
+        ++expectedChanges;
+        if (!initialVSync)
+        {
+            menuOption(window, "Display", "VSync");
+            ++expectedChanges;
+        }
+        if (!settings.fastForwardEnabled || settings.vsync != initialVSync || changes != expectedChanges)
+            throw std::runtime_error("Execution options must toggle back through the callbacks");
+    }
+
+    // Exercita Pause/Break e menus reais contra o mesmo estado de pausa usado pela Engine.
+    void pauseOptions(R2SEGA8::Window::Window &window, SDL_Window *native, R2SEGA8::Systems::PauseState &pause, const bool &menuPaused,
+                      const unsigned &toggles)
+    {
+        const auto check = [](bool condition, const char *message)
+        {
+            if (!condition)
+                throw std::runtime_error(message);
+        };
+        SDL_Event key{};
+        key.type = SDL_EVENT_KEY_DOWN;
+        key.key.windowID = SDL_GetWindowID(native);
+        key.key.key = SDLK_PAUSE;
+        const auto press = [&]()
+        {
+            SDL_PushEvent(&key);
+            window.processEvents();
+        };
+        const auto open = [&](const char *name)
+        {
+            const auto *main = ImGui::FindWindowByName("R2SEGA8");
+            const auto bar = ImHashStr("##MenuBar", 0, main->ID);
+            ImGui::ActivateItemByID(ImHashStr(name, 0, bar));
+            window.render();
+            check(menuPaused && pause.paused(), "An open menu must request temporary emulation pause");
+        };
+        const auto close = [&]()
+        {
+            ImGui::ClosePopupToLevel(0, true);
+            window.render();
+            check(!menuPaused, "Closing the menu must release only its own pause request");
+        };
+        check(!pause.paused() && toggles == 0, "The initial session must not be manually paused");
+        press();
+        check(pause.paused() && toggles == 1, "Pause/Break must toggle manual pause through the callback");
+        key.key.repeat = true;
+        press();
+        key.key.repeat = false;
+        key.key.windowID += 1000;
+        press();
+        key.key.windowID = SDL_GetWindowID(native);
+        key.key.mod = SDL_KMOD_ALT;
+        press();
+        check(pause.paused() && toggles == 1, "Pause must ignore repeats, foreign windows and modified shortcuts");
+        key.key.mod = 0;
+        press();
+        check(!pause.paused(), "A second Pause/Break press must resume manual execution");
+        open("File");
+        close();
+        check(!pause.paused(), "Closing a menu must resume a session without manual pause");
+        press();
+        open("Display");
+        close();
+        check(pause.paused(), "Closing a menu must preserve an existing manual pause");
+        open("Hacks");
+        press();
+        check(pause.paused(), "Removing manual pause while a menu is open must keep the menu pause");
+        close();
+        check(!pause.paused(), "Closing the last pause source must resume execution");
+        open("File");
+        press();
+        close();
+        check(pause.paused(), "Manual pause requested inside a menu must survive closing it");
+        press();
+        check(!pause.paused(), "Pause/Break must remain available after menu capture");
+    }
+
     // Aciona a linha real do seletor pela sua ID, sem coordenadas de tela ou uma confirmação intermediária.
     void activateROMEntry(R2SEGA8::Window::Window &window, int index)
     {
@@ -202,6 +338,7 @@ int main()
             int exits = 0, attempts = 0, memoryQueries = 0;
             bool rejectLoad = false;
             bool inputAllowed = false, lastKeyAllowed = false;
+            R2SEGA8::Systems::Input hostInput;
             unsigned keyEvents = 0;
             bool frameEnabled = false;
             unsigned frameWidth = 8, frameHeight = 8;
@@ -219,6 +356,31 @@ int main()
             std::vector<std::uint8_t> rom;
             std::array<std::uint8_t, 1024> ram{};
             R2SEGA8::Window::Callbacks callbacks;
+            R2SEGA8::Systems::PauseState pause;
+            bool menuPaused = false;
+            unsigned pauseToggles = 0;
+            callbacks.togglePause = [&]()
+            {
+                ++pauseToggles;
+                pause.toggleManual();
+            };
+            callbacks.menuPause = [&](bool paused)
+            {
+                menuPaused = paused;
+                pause.setMenuPaused(paused);
+            };
+            double emulatedFPS = 0;
+            callbacks.fps = [&]()
+            { return emulatedFPS; };
+            R2SEGA8::Common::ExecutionSettings executionSettings;
+            unsigned executionChanges = 0;
+            callbacks.executionSettings = [&]()
+            { return executionSettings; };
+            callbacks.setExecutionSettings = [&](const R2SEGA8::Common::ExecutionSettings &settings)
+            {
+                executionSettings = settings;
+                ++executionChanges;
+            };
             callbacks.hasRom = [&]()
             { return !loadedPath.empty(); };
             callbacks.reset = [&]()
@@ -227,12 +389,14 @@ int main()
             {
                 ++unloads;
                 loadedPath.clear();
+                emulatedFPS = 0;
                 frameEnabled = false;
                 rom.clear();
             };
             // O teste da interface usa dados neutros e não vincula o núcleo de emulação.
             callbacks.inputEvent = [&](const SDL_Event &event, bool enabled)
             {
+                hostInput.handleEvent(event, enabled);
                 if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
                 {
                     ++keyEvents;
@@ -240,13 +404,18 @@ int main()
                 }
             };
             callbacks.inputAvailability = [&](bool enabled)
-            { inputAllowed = enabled; };
+            {
+                inputAllowed = enabled;
+                if (!enabled)
+                    hostInput.clear();
+            };
             callbacks.openRom = [&](const std::filesystem::path &path, auto type)
             {
                 ++attempts;
                 if (rejectLoad)
                     throw std::runtime_error("Load rejected by application callback");
                 loadedPath = path;
+                emulatedFPS = 59.92;
                 loadedType = type;
                 rom.assign(8, 0x42);
                 ++loads;
@@ -277,6 +446,8 @@ int main()
                 throw std::runtime_error("Missing native test window");
             auto *nativeWindow = nativeWindows[0];
             const auto windowID = SDL_GetWindowID(nativeWindow);
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 0.00")
+                throw std::runtime_error("The idle title must show zero emulated FPS without a ROM name");
             SDL_free(nativeWindows);
             SDL_Event focus{};
             focus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
@@ -313,10 +484,20 @@ int main()
             if (inputAllowed || lastKeyAllowed)
                 throw std::runtime_error("ImGui capture did not block gameplay");
             ImGui::GetIO().WantCaptureKeyboard = false;
+            SDL_Event tab{};
+            tab.type = SDL_EVENT_KEY_DOWN;
+            tab.key.windowID = windowID;
+            tab.key.key = SDLK_TAB;
+            SDL_PushEvent(&tab);
+            window.processEvents();
+            window.render();
+            window.render();
+            if (!hostInput.isFastForwardPressed())
+                throw std::runtime_error("Idle ImGui navigation must not consume held TAB fast-forward");
             window.requestOpen(fixture.parent_path());
             SDL_PushEvent(&key);
             window.processEvents();
-            if (inputAllowed || lastKeyAllowed)
+            if (inputAllowed || lastKeyAllowed || hostInput.isFastForwardPressed())
                 throw std::runtime_error("Requested dialog must block input before its first draw");
             window.render();
             if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
@@ -331,6 +512,15 @@ int main()
             if (!hasVideoTexture(8, 8))
                 throw std::runtime_error("Frame callback did not produce a nearest-filtered presentation texture");
             displayOptions(window, nativeWindow);
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 59.92 | 01.sg")
+                throw std::runtime_error("FPS must precede the ROM filename in the native title");
+            emulatedFPS = 245.75;
+            window.render();
+            window.render();
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 245.75 | 01.sg")
+                throw std::runtime_error("Updated emulated FPS must replace the title value without duplicating the filename");
+            executionOptions(window, nativeWindow, executionSettings, executionChanges);
+            pauseOptions(window, nativeWindow, pause, menuPaused, pauseToggles);
             frameWidth = 16;
             frameHeight = 4;
             window.render();
@@ -413,13 +603,20 @@ int main()
                 throw std::runtime_error("File menu did not open");
             ImGui::ActivateItemByID(ImHashStr("Unload", 0, fileMenu->ID));
             window.render();
-            if (unloads != 1 || !loadedPath.empty() || std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8" || hasVideoTexture(8, 8))
+            if (unloads != 1 || !loadedPath.empty() || std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 0.00" ||
+                hasVideoTexture(8, 8))
                 throw std::runtime_error("Unload must notify the application, clear the video and restore the title");
             resetKey.key.windowID = windowID;
             SDL_PushEvent(&resetKey);
             window.processEvents();
             if (resets != 1)
                 throw std::runtime_error("F12 must ignore repeats, foreign windows and an unloaded session");
+            const auto beforePause = pauseToggles;
+            resetKey.key.key = SDLK_PAUSE;
+            SDL_PushEvent(&resetKey);
+            window.processEvents();
+            if (pauseToggles != beforePause)
+                throw std::runtime_error("Pause/Break must ignore an unloaded session");
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
             if (!SDL_PushEvent(&quit) || !SDL_PushEvent(&quit) || window.processEvents() || exits != 1)

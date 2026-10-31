@@ -112,6 +112,108 @@ namespace
         board.output(0xbf, static_cast<Byte>(0x80 | index));
     }
 
+    // Gera uma ROM autônoma para comparar colisão fora da imagem em um console físico.
+    std::vector<Byte> offscreenProbeROM(bool overlapping = true)
+    {
+        std::vector<Byte> rom(0x8000, 0);
+        std::size_t pc = 0;
+        const auto emit = [&](std::initializer_list<Byte> bytes) {
+            for (const auto value : bytes)
+                rom[pc++] = value;
+        };
+        const auto regWrite = [&](Byte index, Byte value) {
+            emit({0x3e, value, 0xd3, 0xbf, 0x3e, static_cast<Byte>(0x80 | index), 0xd3, 0xbf});
+        };
+        const auto address = [&](unsigned value) {
+            emit({0x3e, static_cast<Byte>(value), 0xd3, 0xbf,
+                  0x3e, static_cast<Byte>(0x40 | (value >> 8)), 0xd3, 0xbf});
+        };
+        const auto write = [&](Byte value) { emit({0x3e, value, 0xd3, 0xbe}); };
+        emit({0xf3, 0x31, 0x00, 0xc4}); // DI; LD SP,C400.
+        regWrite(1, 0x80);              // Tela apagada durante a preparação.
+        regWrite(2, 6);
+        regWrite(3, 0x80);
+        regWrite(5, 0x7f);
+        regWrite(6, 5);
+        regWrite(7, 6); // Vermelho enquanto não detecta coincidência.
+        address(0x2000);
+        for (unsigned i = 0; i < 32; ++i)
+            write(0); // Qualquer nome de tile apresenta somente o backdrop.
+        address(0x2800);
+        for (unsigned i = 0; i < 8; ++i)
+            write(0xff);
+        address(0x3f80);
+        for (unsigned i = 0; i < 128; ++i)
+            write(0xd0); // Qualquer entrada examinada durante a ativação já encerra a SAT.
+        address(0x3f80);
+        const std::array<Byte, 9> sprites = {39, 0, 0, 0x8f, 39, static_cast<Byte>(overlapping ? 4 : 20), 0, 0x82, 0xd0};
+        for (const auto value : sprites)
+            write(value);
+        emit({0xdb, 0xbf}); // Limpa flags anteriores antes de iniciar a imagem.
+        regWrite(1, 0xc0);
+        emit({0xdb, 0xbf, 0xe6, 0x20, 0x28, 0xfa}); // IN BF; AND 20; JR Z,-6.
+        regWrite(7, 2);                             // Verde somente depois de ler C=1.
+        emit({0x76, 0x18, 0xfd});                  // HALT permanente, com INT desabilitada.
+        check(pc < rom.size(), "Offscreen diagnostic exceeds ROM capacity");
+        return rom;
+    }
+
+    // Valida a ROM autônoma no mesmo caminho de CPU, barramento e vídeo do emulador.
+    void offscreenProbeStandalone(const std::vector<Byte> &rom)
+    {
+        Fixture fixture(rom);
+        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        board->runCycles(VDP::MasterTicksPerFrame / 3ULL * 2);
+        check(board->cpu().state().halted && board->vdp().state().registers[7] == 2,
+              "Standalone diagnostic must detect offscreen C through the Z80 and turn green");
+        const auto frame = board->videoFrame();
+        check(frame.rgba[0] == 33 && frame.rgba[1] == 200 && frame.rgba[2] == 66,
+              "Standalone diagnostic must display the green success backdrop");
+        Fixture control(offscreenProbeROM(false));
+        auto noCollision = std::make_unique<Board>(R2SEGA8::Core::Cartridge(control.path));
+        noCollision->runCycles(VDP::MasterTicksPerFrame / 3ULL * 2);
+        check(!noCollision->cpu().state().halted && noCollision->vdp().state().registers[7] == 6,
+              "Nonoverlapping offscreen sprites must keep the diagnostic waiting with a red backdrop");
+    }
+
+    // O Z80 lê BF até registrar uma coincidência que ocorre somente fora da borda esquerda.
+    void offscreenCollisionThroughCPU()
+    {
+        std::vector<Byte> rom(0x100, 0);
+        rom[0] = 0x76; // HALT até o teste disparar NMI depois de preparar a VRAM.
+        const Byte code[] = {0x3e, 0xc0, 0xd3, 0xbf, 0x3e, 0x81, 0xd3, 0xbf, // Ativa Graphics I.
+                             0xdb, 0xbf, 0xe6, 0x20, 0x28, 0xfa,             // Consulta BF até C=1.
+                             0x32, 0x00, 0xc0, 0x76};                       // Registra C e espera.
+        std::copy(std::begin(code), std::end(code), rom.begin() + 0x66);
+        Fixture fixture(rom);
+        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        board->runCycles(20);
+        check(board->cpu().state().halted, "Offscreen collision test CPU must await NMI");
+        reg(*board, 5, 0x7f);
+        reg(*board, 6, 5);
+        reg(*board, 7, 4);
+        // As transferências seguem pela porta real e esperam com a tela apagada.
+        const auto upload = [&](unsigned address, std::initializer_list<Byte> bytes) {
+            board->output(0xbf, static_cast<Byte>(address));
+            board->output(0xbf, static_cast<Byte>(0x40 | (address >> 8)));
+            for (const auto value : bytes)
+            {
+                board->output(0xbe, value);
+                board->runCycles(32);
+            }
+        };
+        upload(0x2800, {255, 255, 255, 255, 255, 255, 255, 255});
+        upload(0x3f80, {39, 0, 0, 0x8f, 39, 4, 0, 0x82, 0xd0});
+        board->setInput({R2SEGA8::Common::mask(R2SEGA8::Common::Button::Start), 0});
+        board->runCycles(VDP::MasterTicksPerFrame / 3ULL * 2);
+        check(board->readMemory(0xc000) == 0x20 && board->cpu().state().halted,
+              "Z80 must observe and acknowledge collision between fully offscreen sprites through BF");
+        const auto frame = board->videoFrame();
+        const auto *pixel = frame.rgba + 40 * frame.pitch;
+        check(pixel[0] == 84 && pixel[1] == 85 && pixel[2] == 237,
+              "An offscreen collision must not introduce visible pixels");
+    }
+
     // Confere todos os espelhos de porta e a relação exata entre o clock da CPU e o raster.
     void mappingAndClock(const std::filesystem::path &path)
     {
@@ -437,12 +539,21 @@ int main(int argc, char **argv)
         const auto rom = demoROM();
         Fixture fixture(rom);
         mappingAndClock(fixture.path);
+        offscreenCollisionThroughCPU();
+        const auto probe = offscreenProbeROM();
+        offscreenProbeStandalone(probe);
         transferPacing();
         rasterColors();
         auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
         validateDemo(*board);
         if (argc == 2)
+        {
             exportDemo(std::filesystem::u8path(argv[1]), rom, *board);
+            std::ofstream out(std::filesystem::u8path(argv[1]) / "offscreen-collision-probe.sg", std::ios::binary);
+            out.write(reinterpret_cast<const char *>(probe.data()), static_cast<std::streamsize>(probe.size()));
+            out.close();
+            check(bool(out), "Cannot export the offscreen collision diagnostic");
+        }
         for (unsigned mode : {2u, 1u, 4u, 8u})
         {
             const auto modeROM = backgroundROM(mode);
