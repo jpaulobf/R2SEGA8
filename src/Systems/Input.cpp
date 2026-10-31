@@ -15,21 +15,20 @@ namespace R2SEGA8::Systems
             mapKey(key, Button::Left);
         for (auto key : {SDLK_D, SDLK_RIGHT})
             mapKey(key, Button::Right);
-        // Mantém as posições usadas no R2BOY: J/B, K/A, U/Turbo B, I/Turbo A.
-        mapKey(SDLK_J, Button::B);
-        mapKey(SDLK_K, Button::A);
-        mapKey(SDLK_U, Button::TurboB);
-        mapKey(SDLK_I, Button::TurboA);
+        mapKey(SDLK_K, Button::B);
+        mapKey(SDLK_J, Button::A);
+        mapKey(SDLK_I, Button::TurboB);
+        mapKey(SDLK_U, Button::TurboA);
         mapKey(SDLK_BACKSPACE, Button::Select);
         mapKey(SDLK_RETURN, Button::Start);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_UP, Button::Up);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::Down);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::Left);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::Right);
-        mapGamepad(SDL_GAMEPAD_BUTTON_SOUTH, Button::B);
-        mapGamepad(SDL_GAMEPAD_BUTTON_EAST, Button::A);
-        mapGamepad(SDL_GAMEPAD_BUTTON_WEST, Button::TurboB);
-        mapGamepad(SDL_GAMEPAD_BUTTON_NORTH, Button::TurboA);
+        mapGamepad(SDL_GAMEPAD_BUTTON_SOUTH, Button::A);
+        mapGamepad(SDL_GAMEPAD_BUTTON_EAST, Button::B);
+        mapGamepad(SDL_GAMEPAD_BUTTON_WEST, Button::TurboA);
+        mapGamepad(SDL_GAMEPAD_BUTTON_NORTH, Button::TurboB);
         mapGamepad(SDL_GAMEPAD_BUTTON_BACK, Button::Select);
         mapGamepad(SDL_GAMEPAD_BUTTON_START, Button::Start);
     }
@@ -74,6 +73,7 @@ namespace R2SEGA8::Systems
     void Input::clear()
     {
         pressedKeys_.clear();
+        fastForwardPressed_ = false;
     }
 
     void Input::openGamepad(SDL_JoystickID id)
@@ -120,10 +120,16 @@ namespace R2SEGA8::Systems
                 discoverGamepads();
         }
         else if (event.type == SDL_EVENT_KEY_UP)
+        {
             pressedKeys_.erase(event.key.key);
+            if (event.key.key == SDLK_TAB)
+                fastForwardPressed_ = false;
+        }
         else if (event.type == SDL_EVENT_KEY_DOWN && enabled && !event.key.repeat &&
                  !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)))
         {
+            if (event.key.key == SDLK_TAB)
+                fastForwardPressed_ = true;
             if (keyMap_.count(event.key.key))
                 pressedKeys_.insert(event.key.key);
         }

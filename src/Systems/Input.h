@@ -35,8 +35,11 @@ namespace R2SEGA8::Systems
         // Retorna intenções dos dois jogadores; turbo permanece lógico para seguir o clock emulado na placa.
         Common::InputState update(bool enabled = true);
 
-        // Esquece teclas memorizadas; os gamepads são amostrados novamente em update.
+        // Esquece teclas memorizadas e TAB; os gamepads são amostrados novamente em update.
         void clear();
+
+        // TAB permanece ativo até soltura, perda de foco ou captura pela interface; não é um botão do console.
+        bool isFastForwardPressed() const { return fastForwardPressed_; }
 
         // Associa uma tecla a um botão/jogador e descarta sua pressão anterior.
         void mapKey(SDL_Keycode key, Common::Button button, unsigned player = 0);
@@ -70,5 +73,6 @@ namespace R2SEGA8::Systems
         std::set<SDL_Keycode> pressedKeys_;
         std::map<SDL_JoystickID, Device> gamepads_;
         bool initialized_ = false;
+        bool fastForwardPressed_ = false;
     };
 }
