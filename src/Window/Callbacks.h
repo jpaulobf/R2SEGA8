@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Common/SystemType.h"
 #include "Common/AudioSettings.h"
+#include "Common/ExecutionSettings.h"
+#include "Common/SystemType.h"
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -46,6 +47,12 @@ namespace R2SEGA8::Window
         // Solicita a reinicialização completa da máquina com a ROM atual.
         std::function<void()> reset;
 
+        // Solicita alternância da pausa manual pelo atalho Pause/Break.
+        std::function<void()> togglePause;
+
+        // Informa pausa temporária por menus/diálogos; não altera a pausa manual da aplicação.
+        std::function<void(bool)> menuPause;
+
         // Solicita a liberação da máquina ativa, mantendo a janela aberta.
         std::function<void()> unload;
 
@@ -55,11 +62,20 @@ namespace R2SEGA8::Window
         // Consulta o quadro para copiar à textura antes de emitir ações que possam invalidar seus bytes.
         std::function<FrameView()> frame;
 
+        // Consulta quadros emulados por segundo real; não depende da cadência de apresentação da janela.
+        std::function<double()> fps;
+
         // Consulta os ajustes de áudio mantidos pela aplicação, sem conhecer o mixer ou a placa.
         std::function<Common::AudioSettings()> audioSettings;
 
         // Publica ativação e volumes escolhidos no menu Audio.
         std::function<void(const Common::AudioSettings &)> setAudioSettings;
+
+        // Consulta as preferências de sincronização e disponibilidade do avanço rápido.
+        std::function<Common::ExecutionSettings()> executionSettings;
+
+        // Publica as escolhas dos menus Display e Hacks; a aplicação define o ritmo de execução.
+        std::function<void(const Common::ExecutionSettings &)> setExecutionSettings;
 
         // Encaminha eventos do host e informa se a interface permite entrada de jogo neste instante.
         std::function<void(const SDL_Event &, bool)> inputEvent;
