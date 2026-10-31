@@ -166,7 +166,9 @@ estão em [TMS9918.md](TMS9918.md), incluindo a política funcional de escritas
 no meio da linha e seus testes. A sequência seguinte é:
 
 1. Ampliar os testes de ROMs, controles físicos, áudio e timings do VDP em hardware.
-2. Refinar a sincronização de áudio e vídeo, incluindo VSync e recuperação de atrasos.
+2. Refinar a sincronização de áudio e vídeo, separando a cadência de emulação
+   da apresentação em monitores com frequências diferentes. VSync básico e
+   avanço rápido por TAB estão descritos em [Display.md](Display.md).
 3. Implementar mapas, mapeadores e periféricos dos demais sistemas, com testes
    específicos antes de anunciar suporte de execução.
 

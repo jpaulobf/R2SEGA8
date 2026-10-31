@@ -1,9 +1,84 @@
 # Apresentação da janela
 
-A janela principal apresenta somente o vídeo e os menus File e Display.
+A janela principal apresenta somente o vídeo e os menus File, Display, Audio e Hacks.
 Cartridge ROM e System RAM não são consultados nem desenhados nessa tela.
 O callback `memory`, os tipos neutros de consulta e o desenho hexadecimal
 foram preservados em `Window::MemoryInspector` para futuras janelas de Debug.
+
+## VSync e avanço rápido
+
+`Display > VSync` é a primeira opção, separada das escalas por um divisor.
+Começa ativada. `Hacks > Enable Fast-Forward` começa ativada e permite
+acelerar enquanto TAB estiver pressionado. As preferências pertencem à sessão
+da Engine e são consultadas/alteradas pela Window somente por callbacks.
+
+| Modo efetivo | Execução e apresentação |
+| --- | --- |
+| VSync desativado | Clock original da placa, com prazos racionais e sleep; SG-1000 NTSC a aproximadamente 59,922743 Hz. |
+| VSync ativado | Um quadro emulado por apresentação; a espera vertical da SDL controla o ritmo, sem sleep ou limite adicional. |
+| TAB pressionado com fast-forward permitido | Até oito quadros por apresentação, sem VSync nem sleep; PCM descartado e saída silenciada. |
+
+O lote de avanço rápido consulta eventos e entradas entre os quadros, permitindo
+soltar TAB sem esperar a apresentação seguinte. Nenhum clock da máquina é
+descartado; somente imagens intermediárias deixam de ser apresentadas.
+
+## FPS no título
+
+O título usa `R2SEGA8 | FPS : 59.92 | Nome da ROM.sg`. A Engine mede os
+quadros emulados por segundo real e fornece a média parcial à Window por
+callback a cada quadro, sem esperar fechar a janela de 500 ms. Quadros intermediários do avanço rápido também
+entram na conta; chamadas de renderização sem emulação não entram.
+
+Sem ROM, a indicação é zero e o nome do arquivo é removido. Carga e reset da
+máquina reiniciam a medição. Trocas de modo, inclusive pressionar/soltar TAB,
+preservam o valor e a contagem atual; o quadro seguinte já atualiza a média.
+A renovação periódica da janela também preserva o último valor. A Window preserva o nome da ROM e só
+atualiza o título nativo quando o texto muda. A análise do gargalo de execução
+no MinGW está registrada em [Performance.md](Performance.md).
+
+## Transições entre modos
+
+O modo VSync acompanha a frequência do monitor. Nesta versão, um monitor acima
+da frequência original também acelera a emulação nesse modo; a separação entre
+cadência de emulação e apresentação fica para uma revisão futura.
+
+TAB suspende temporariamente VSync sem apagar a preferência do menu. Soltar TAB
+restaura o modo anterior. Captura pela interface, abertura de menus/diálogos,
+perda de foco, minimização, reset e troca de ROM liberam a tecla memorizada.
+Desativar a opção em Hacks também impede o avanço rápido. A fila de áudio é
+limpa ao entrar e sair dele; os ajustes de volume/ativação são preservados e o
+PSG continua sendo emulado. Turbo dos controles continua seguindo os quadros
+emulados, inclusive em avanço rápido.
+
+As trocas de modo reiniciam os prazos, sem recuperar tempo do modo anterior.
+Minimizar usa o limitador nativo mesmo com VSync selecionado, evitando depender
+de apresentações suspensas para limitar o loop. Se a SDL rejeitar a ativação
+de VSync, a Engine registra a falha e retorna ao ritmo nativo com a opção
+desmarcada. A configuração do renderizador usa
+[`SDL_SetRenderVSync`](https://wiki.libsdl.org/SDL3/SDL_SetRenderVSync).
+
+Os testes de janela verificam os callbacks dos dois menus, a configuração SDL,
+a suspensão temporária sem alterar a preferência e TAB através do ImGui/Input.
+Os testes de entrada cobrem soltura, captura, modificadores, repetição, perda
+de foco e minimização. A espera física pelo monitor precisa de teste com uma
+janela real; o backend dummy não certifica sincronização de hardware.
+
+## Pausa manual e menus
+
+Pause/Break alterna a pausa manual quando há uma ROM carregada. Repetições
+automáticas, atalhos modificados e eventos de outras janelas são ignorados.
+O atalho continua disponível dentro de um menu, mesmo com captura do teclado.
+
+Abrir menus ou o seletor de ROM solicita uma pausa temporária pelo callback
+`menuPause`. Fechá-los libera somente essa solicitação: a execução continua
+suspensa se Pause/Break tiver solicitado uma pausa manual. `Systems::PauseState`
+mantém as duas origens independentes; a Window não conhece CPU, Board ou Engine.
+
+Durante a pausa, a Engine mantém eventos e apresentação, sem avançar CPU,
+VDP ou PSG. A saída de áudio é limpa, o avanço rápido é interrompido e as
+entradas memorizadas são liberadas. Retomar inicia novos prazos para não
+recuperar o tempo pausado. O contador de FPS preserva o valor e a contagem,
+excluindo da média o tempo em que a emulação ficou suspensa.
 
 ## Escalas e proporção
 

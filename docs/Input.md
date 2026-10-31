@@ -23,16 +23,26 @@ por jogador ao `Core::IO::Joypad`, que não depende de SDL.
 | Função | Teclado P1 | Posição SDL do gamepad / layout Xbox |
 | --- | --- | --- |
 | Direções | WASD ou setas | D-pad ou analógico esquerdo |
-| A / botão 1 | K | East / B |
-| B / botão 2 | J | South / A |
-| Turbo A | I | North / Y |
-| Turbo B | U | West / X |
+| A / botão 1 | J | South / A |
+| B / botão 2 | K | East / B |
+| Turbo A | U | West / X |
+| Turbo B | I | North / Y |
 | Start → Pause/Hold do console | Enter | Start |
 | Select, sem efeito neste SG-1000 | Backspace | Back/View |
 
-As posições de ação seguem o padrão usado no exemplo do R2BOY. As letras
-impressas variam entre controles; a associação usa a posição lógica da SDL.
+As letras impressas variam entre controles; a associação usa a posição lógica da SDL.
 O teclado é atribuído a P1 por padrão, mas a API permite teclas para P2.
+
+TAB mantido solicita avanço rápido à Engine, quando permitido em
+`Hacks > Enable Fast-Forward` (ativado por padrão). Não pertence ao enum
+de botões do console. Soltura, captura, perda de foco e minimização liberam
+o estado memorizado; o áudio fica silenciado durante o avanço rápido.
+Veja [Display.md](Display.md) para os três modos de execução.
+
+Pause/Break alterna a pausa manual pela callback da janela, sem integrar o
+enum de botões do console. Menus e diálogos pausam temporariamente e não
+removem essa intenção manual ao fechar. Durante a pausa, entradas de jogo
+e TAB são liberados; o atalho de pausa permanece disponível.
 
 O analógico usa zona morta de 16000 em cada eixo: os limites exatos são
 neutros e valores além deles ativam uma direção. Não há filtro de direções
