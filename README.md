@@ -20,6 +20,9 @@ Dragging a ROM into the window also loads it directly.
 Use **File > Reset** or **F12** to restart the current ROM, and **File > Unload**
 to stop emulation and close the cartridge. Audio preferences stay unchanged.
 
+Press **Pause/Break** to pause or resume. Opening a menu pauses emulation;
+closing it resumes only if you did not pause manually.
+
 The extension selects the system: `.sg`, `.sc`, `.sms` or `.gg` (case-insensitive).
 ZIP loading and automatic identification of `.bin` files will come later.
 
@@ -29,10 +32,14 @@ Starts at **3X**. Choose **1X–5X** in **Display**, or press **Ctrl+1–5**.
 The video fills the available area while keeping its aspect ratio.
 Maximizing is allowed; manual resizing is blocked.
 
+**Display > VSync** synchronizes presentation with the monitor; it starts enabled.
+Hold **Tab** for silent fast-forward. **Hacks > Enable Fast-Forward** starts enabled.
+The title shows emulated FPS before the ROM filename.
+
 ## Controls
 
-Use **WASD or arrow keys** to move, **K/J** for buttons **1/2**, and **Enter**
-for the SG-1000 Pause/Hold button. **I/U** provide turbo for buttons **1/2**.
+Use **WASD or arrow keys** to move, **J/K** for buttons **1/2**, and **Enter**
+for the SG-1000 Pause/Hold button. **U/I** provide turbo for buttons **1/2**.
 
 SDL-compatible gamepads are detected automatically, including connection and
 removal while running. Two players are supported. See the [input guide](docs/Input.md)
