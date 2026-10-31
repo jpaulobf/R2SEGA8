@@ -432,17 +432,17 @@ namespace R2SEGA8::Core
                     fetchSprite(state_.nextSprites[index], phase, target);
     }
 
-    std::uint8_t TMS9918::spriteColor()
+    std::uint8_t TMS9918::spriteColor(const std::array<Sprite, 32> &sprites, unsigned count, int x)
     {
         unsigned overlaps = 0;
         std::uint8_t color = 0;
-        for (unsigned index = 0; index < state_.spriteCount; ++index)
+        for (unsigned index = 0; index < count; ++index)
         {
-            const auto &sprite = state_.sprites[index];
+            const auto &sprite = sprites[index];
             if (!sprite.visible)
                 continue;
             const int left = sprite.x - ((sprite.attributes & 0x80) ? 32 : 0);
-            const int offset = static_cast<int>(state_.dot) - left;
+            const int offset = x - left;
             if (offset < 0 || offset >= sprite.size * sprite.scale)
                 continue;
             const unsigned column = static_cast<unsigned>(offset) / sprite.scale;
@@ -467,7 +467,7 @@ namespace R2SEGA8::Core
             color = backdrop;
         if (spritesEnabled())
         {
-            const auto sprite = spriteColor();
+            const auto sprite = spriteColor(state_.sprites, state_.spriteCount, state_.dot);
             if (sprite)
                 color = sprite;
         }
@@ -490,6 +490,15 @@ namespace R2SEGA8::Core
         clockMemory();
         if (state_.line < Height && state_.dot < Width)
             drawPixel();
+        else if (spritesEnabled() && !(state_.status & 0x20))
+        {
+            // O manual da TI inclui coincidências fora da tela. Os dots de borda usam os
+            // mesmos bancos já buscados, sem produzir pixels nem ocupar slots extras de VRAM.
+            if (state_.line < Height && state_.dot >= Width && state_.dot <= Width + 30)
+                spriteColor(state_.sprites, state_.spriteCount, state_.dot);
+            else if (state_.dot >= DotsPerLine - 32 && (state_.line + 1) % LinesPerFrame < Height)
+                spriteColor(state_.nextSprites, state_.nextSpriteCount, static_cast<int>(state_.dot) - static_cast<int>(DotsPerLine));
+        }
         if (++state_.dot == DotsPerLine)
         {
             state_.dot = 0;

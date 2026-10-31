@@ -146,8 +146,8 @@ namespace R2SEGA8::Core
         // Executa uma das seis buscas de atributos/padrões, preservando os latches entre dots.
         void fetchSprite(Sprite &sprite, unsigned phase, unsigned targetLine, bool physical = true);
 
-        // Compõe somente o pixel atual e atualiza a flag de colisão no dot correspondente.
-        std::uint8_t spriteColor();
+        // Compõe a posição horizontal usando o banco indicado e atualiza a flag de colisão.
+        std::uint8_t spriteColor(const std::array<Sprite, 32> &sprites, unsigned count, int x);
 
         // Avança a saída da célula usando bytes e formato latentes, inclusive durante apagamento.
         std::uint8_t backgroundColor();

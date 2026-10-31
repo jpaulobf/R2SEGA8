@@ -108,7 +108,13 @@ namespace R2SEGA8::Core
             s_ = initial_;
             cursor_ = 0;
             decoderPins_ = {};
+#if defined(__MINGW32__) && defined(__x86_64__)
+            // MinGW x64: frame nulo usa a variante sem SEH, evitando unwind a cada micro-operação.
+            // O trecho suspenso contém somente temporários triviais, conforme o contrato de access().
+            if (_setjmp(yieldPoint_, nullptr) == 0)
+#else
             if (setjmp(yieldPoint_) == 0)
+#endif
             {
                 const auto expected = instruction();
                 unsigned actual = 0;
