@@ -2,7 +2,36 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
-## [Unreleased]
+## v0.1.0
+
+- Repasse do SG-1000: colisões nas bordas horizontais de sprites conforme o
+  manual da TI, com testes de núcleo, restauração e leitura de status pelo Z80.
+- Testes das portas não decodificadas e comparação das janelas VRAM da TI;
+  divergências e medições pendentes em docs/TMS9918Audit.md.
+- Testes e documentação atualizados para os ajustes locais de controles e VSync.
+
+- Pause/Break alterna pausa manual; menus e seletor de ROM suspendem a emulação
+  temporariamente, preservando a pausa manual ao fechar. Comunicação por callbacks.
+- Pausa interrompe CPU/VDP/PSG, limpa áudio e suspende avanço rápido; retomada
+  reinicia prazos e exclui o tempo pausado da média de FPS sem zerá-la.
+- Testes de pausa manual dentro/fora dos menus, captura, repetição, descarga e FPS.
+
+- FPS recalculados a cada quadro com a contagem atual, preservando a medição
+  ao pressionar/soltar TAB ou alternar VSync, sem zerar o título nem esperar a janela completa.
+
+- Corrigido gargalo de retomada das micro-operações do Z80 no MinGW x64:
+  contexto sem SEH evita desenrolamento de pilha a cada acesso, preservando T-states.
+- Avanço rápido executa até oito quadros por apresentação, consultando TAB e
+  eventos entre eles. FPS emulados exibidos antes da ROM no título da janela.
+- Contador de FPS com medição por tempo real e testes de atualização do título,
+  troca de ROM e descarga. Medições e referências em docs/Performance.md.
+
+- Display > VSync como primeira opção (ativada por padrão), com um quadro
+  por apresentação e espera vertical da SDL, sem limitador adicional.
+- Hacks > Enable Fast-Forward ativado por padrão: TAB mantido suspende VSync e
+  sleep, silencia a saída de áudio e descarta PCM sem parar a emulação do PSG.
+  Trocas de modo reiniciam prazos e limpam áudio ao entrar/sair do avanço rápido.
+- Testes dos menus por callbacks e de TAB, incluindo captura, foco e minimização.
 
 - Revisão do TMS9918: testes de hardware selecionam explicitamente quatro
   sprites por linha; sprites ilimitados permanecem habilitados por padrão.
