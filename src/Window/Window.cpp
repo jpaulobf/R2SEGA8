@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -17,6 +18,7 @@
 #include <imgui_impl_sdlrenderer3.h>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace R2SEGA8::Window
@@ -36,6 +38,9 @@ namespace R2SEGA8::Window
         int fixedWidth = 0, fixedHeight = 0;
         float menuHeight = 0;
         bool maximized = false;
+        bool vsync = false;
+        bool reportedMenuPause = false;
+        std::string romName, title;
 #ifdef _WIN32
         HWND nativeWindow = nullptr;
         bool resizeHook = false;
@@ -103,11 +108,35 @@ namespace R2SEGA8::Window
             return !io.WantCaptureKeyboard && !io.WantTextInput &&
                    !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
         }
-        // Publica mudanças de disponibilidade também nos quadros sem eventos SDL.
+        // Publica pausa de menus e disponibilidade de entrada também nos quadros sem eventos SDL.
         void notifyInput()
         {
+            const bool menuPaused = files.isOpen() ||
+                                    (contextReady && ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel));
+            if (menuPaused != reportedMenuPause)
+            {
+                reportedMenuPause = menuPaused;
+                if (callbacks.menuPause)
+                    callbacks.menuPause(menuPaused);
+            }
             if (callbacks.inputAvailability)
                 callbacks.inputAvailability(acceptsInput());
+        }
+        // Compõe FPS antes do nome da ROM e evita atualizar o título nativo quando o texto não mudou.
+        void updateTitle()
+        {
+            const double measured = callbacks.fps ? callbacks.fps() : 0;
+            const double fps = std::isfinite(measured) && measured >= 0 ? measured : 0;
+            char prefix[96];
+            std::snprintf(prefix, sizeof(prefix), "R2SEGA8 | FPS : %.2f", fps);
+            auto next = std::string(prefix);
+            if (!romName.empty())
+                next += " | " + romName;
+            if (next != title)
+            {
+                SDL_SetWindowTitle(window, next.c_str());
+                title = std::move(next);
+            }
         }
         // Encaminha ações e consultas ao seletor, sem inicializar recursos nativos.
         explicit Impl(Callbacks handlers, DisplaySize size)
@@ -116,10 +145,11 @@ namespace R2SEGA8::Window
                     {
                         if (!callbacks.openRom)
                             throw std::runtime_error("ROM loading callback is not configured.");
-                        const auto title = std::string("R2SEGA8 | ") + path.filename().u8string();
+                        const auto name = path.filename().u8string();
                         callbacks.openRom(path, type);
                         // Atualiza somente após a aplicação confirmar o carregamento sem lançar exceção.
-                        SDL_SetWindowTitle(window, title.c_str()); }),
+                        romName = name;
+                        updateTitle(); }),
               nativeSize(size)
         {
             const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max() / 10);
@@ -149,7 +179,8 @@ namespace R2SEGA8::Window
             if (callbacks.unload && callbacks.hasRom && callbacks.hasRom())
             {
                 callbacks.unload();
-                SDL_SetWindowTitle(window, "R2SEGA8");
+                romName.clear();
+                updateTitle();
             }
         }
         // Copia um quadro neutro para a textura; os bytes do callback não escapam desta chamada.
@@ -244,7 +275,8 @@ namespace R2SEGA8::Window
         state.renderer = SDL_CreateRenderer(state.window, nullptr);
         if (!state.renderer)
             throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderVSync(state.renderer, 0); // O chamador controla o ritmo de apresentação.
+        if (!SDL_SetRenderVSync(state.renderer, 0))
+            throw std::runtime_error(SDL_GetError());
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         state.contextReady = true;
@@ -269,11 +301,31 @@ namespace R2SEGA8::Window
         state.menuHeight = ImGui::GetFrameHeight();
         ImGui::EndFrame();
         state.resizeDisplay(state.displayScale);
+        state.updateTitle();
     }
 
     void Window::requestOpen(const std::filesystem::path &path)
     {
         impl_->files.requestOpen(path);
+    }
+
+    bool Window::setVSync(bool enabled)
+    {
+        auto &state = *impl_;
+        if (!state.rendererReady)
+            throw std::logic_error("Open the window before configuring VSync.");
+        if (state.vsync == enabled)
+            return true;
+        if (!SDL_SetRenderVSync(state.renderer, enabled ? 1 : 0))
+            return false;
+        state.vsync = enabled;
+        return true;
+    }
+
+    bool Window::isMinimized() const
+    {
+        const auto &state = *impl_;
+        return !state.window || state.minimized || (SDL_GetWindowFlags(state.window) & SDL_WINDOW_MINIMIZED) != 0;
     }
 
     bool Window::processEvents()
@@ -320,6 +372,11 @@ namespace R2SEGA8::Window
             if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F12 &&
                 !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)) && !state.files.isOpen())
                 state.requestReset();
+            // Pause/Break é uma ação da aplicação: continua disponível quando o jogo está pausado ou um menu captura o teclado.
+            if (ownEvent && state.focused && !state.minimized && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                event.key.key == SDLK_PAUSE && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)) &&
+                state.callbacks.togglePause && state.callbacks.hasRom && state.callbacks.hasRom())
+                state.callbacks.togglePause();
             if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.mod & SDL_KMOD_CTRL) &&
                 !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI)) && event.key.key >= SDLK_1 && event.key.key <= SDLK_5)
                 state.resizeDisplay(static_cast<unsigned>(event.key.key - SDLK_1 + 1));
@@ -340,6 +397,7 @@ namespace R2SEGA8::Window
         auto &state = *impl_;
         if (!state.rendererReady)
             throw std::logic_error("Open the window before rendering.");
+        state.updateTitle();
         if (SDL_GetWindowFlags(state.window) & SDL_WINDOW_MINIMIZED)
         {
             state.minimized = true;
@@ -378,6 +436,11 @@ namespace R2SEGA8::Window
                 }
                 if (ImGui::BeginMenu("Display"))
                 {
+                    const bool configurable = state.callbacks.executionSettings && state.callbacks.setExecutionSettings;
+                    auto settings = configurable ? state.callbacks.executionSettings() : Common::ExecutionSettings{};
+                    if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
+                        state.callbacks.setExecutionSettings(settings);
+                    ImGui::Separator();
                     for (unsigned scale = 1; scale <= 5; ++scale)
                     {
                         char label[] = "1X", shortcut[] = "Ctrl+1";
@@ -409,6 +472,13 @@ namespace R2SEGA8::Window
                     ImGui::PopItemFlag();
                     if (changed)
                         state.callbacks.setAudioSettings(settings);
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Hacks", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
+                {
+                    auto settings = state.callbacks.executionSettings();
+                    if (ImGui::MenuItem("Enable Fast-Forward", "Tab (hold)", &settings.fastForwardEnabled))
+                        state.callbacks.setExecutionSettings(settings);
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenuBar();

@@ -35,13 +35,20 @@ namespace R2SEGA8::Window
         // Agenda o seletor; um caminho de ROM solicita carregamento imediato no próximo desenho.
         void requestOpen(const std::filesystem::path &path = {});
 
-        // Encaminha eventos ao ImGui e aos callbacks, informando a captura; trata saída, Ctrl+O e arquivos arrastados.
+        // Encaminha eventos ao ImGui e aos callbacks; trata saída, Pause/Break, Ctrl+O e arquivos arrastados.
         // Retorna false quando a saída foi solicitada; exige uma sessão inicializada.
         bool processEvents();
 
-        // Consulta a apresentação e notifica ações e disponibilidade de entrada pelos callbacks.
+        // Consulta a apresentação e notifica ações, pausa de menus e disponibilidade de entrada pelos callbacks.
         // Exige uma sessão inicializada e propaga falhas de renderização SDL3.
         void render();
+
+        // Ativa/desativa a espera vertical do renderizador; retorna false com SDL_GetError em falhas.
+        // Exige uma sessão inicializada e mantém a configuração anterior quando a SDL rejeita a troca.
+        bool setVSync(bool enabled);
+
+        // Informa se a apresentação está suspensa; permite ao chamador evitar um loop sem espera ao minimizar.
+        bool isMinimized() const;
 
     private:
         // Oculta os tipos nativos e centraliza o estado e a liberação dos recursos.
