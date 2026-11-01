@@ -2,6 +2,32 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
+## Unrelease
+
+- File > Recent Files reúne até dez ROMs carregadas com sucesso, com as mais
+  recentes primeiro; o seletor volta à última pasta de ROM disponível. Histórico
+  e pasta são persistidos em resources/config.ini.
+- Save State e Load State para SG-1000, com três slots por ROM e atalhos F5/F6.
+  Os estados incluem CPU, vídeo, áudio e memória, com validação de integridade
+  e compatibilidade antes da restauração.
+- Display > Pixel Art adiciona o filtro da SDL para pixel art, mutuamente
+  exclusivo com Bilinear Filter.
+
+- Menu Display com tela cheia borderless em dois modos: imagem esticada para
+  preencher a tela ou centralizada com a proporção do console preservada.
+  O menu fica oculto em tela cheia; Esc retorna à última escala de janela.
+- Display > Bilinear Filter usa o filtro linear do SDL3 quando ativado;
+  desativado por padrão, preservando o filtro nearest.
+- Hacks > Enable Unlimited Sprites controla o limite de sprites do TMS9918,
+  ativado por padrão e preservado ao abrir ROM, reiniciar ou carregar estado.
+- Avanço rápido também pode ser mantido pelo gatilho R2 de qualquer joystick,
+  além do atalho TAB; a entrada não aciona botões do console.
+- Menu Input com opções mutuamente exclusivas para inverter A/B ou alternar
+  as funções de A, B, Turbo A e Turbo B no teclado e nos dois joysticks.
+- Testes de interface e controles virtuais para as novas opções, incluindo
+  filtros, tela cheia, restauração da janela e desconexão do joystick.
+
+
 ## v0.1.0
 
 - Repasse do SG-1000: colisões nas bordas horizontais de sprites conforme o
@@ -84,8 +110,7 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
   e apresentação centralizada com proporção preservada em toda a área disponível.
 - Política de tamanho fixo com maximização: bloqueio de bordas/comando de resize
   no Windows e retorno ao preset para tamanhos normais arbitrários.
-- Fullscreen adiado para modos borderless com proporção ou stretched;
-  Exclusive Fullscreen excluído do plano.
+- Exclusive Fullscreen excluído do plano; tela cheia usa modos borderless.
 
 - Controles do SG-1000: enum lógico, maps de teclado/gamepad, dois jogadores,
   analógico com zona morta e detecção inicial/hotplug pela SDL3.
@@ -110,7 +135,7 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 - Sprites do TMS9918 com seleção e buscas distribuídas por dot, SIZE/MAG,
   early clock, prioridade, transparência, colisão e flag/índice do quinto sprite.
-- Limite padrão de quatro sprites por linha e opção no núcleo para até 32,
+- Limite de hardware de quatro sprites por linha e opção no núcleo para até 32,
   com fetch adicional por dot e estado completo para retomada.
 - Testes de sprites, fases do fetch, snapshots e ROM própria com conferência
   de todos os pixels e reconhecimento de colisão/overflow pela ISR do Z80.
