@@ -16,6 +16,9 @@ namespace R2SEGA8::Core
 
         // Informa que o perfil de ROM simples possui um mapa de memória implementado.
         bool hasMemoryMap() const override { return true; }
+        bool supportsSaveState() const override { return true; }
+        std::vector<std::uint8_t> saveState() const override;
+        void loadState(const std::vector<std::uint8_t> &data) override;
 
         // Perfil inicial de clock NTSC; o perfil PAL acompanhará a implementação do vídeo.
         unsigned clockFrequency() const override { return 3579545; }
@@ -60,6 +63,8 @@ namespace R2SEGA8::Core
 
         // Encaminha os ganhos de apresentação ao mixer sem alterar o hardware programado pela ROM.
         void setAudioSettings(const Common::AudioSettings &settings) override { psg_.setAudioSettings(settings); }
+
+        void setSpriteUnlimited(bool enabled) override { vdp_.setSpriteUnlimited(enabled); }
 
     private:
         // Aplica direções/botões 1/2; o turbo usa a publicação de quadros do VDP, inclusive em HALT/WAIT.
