@@ -15,6 +15,8 @@ namespace R2SEGA8::Common
         bool vsync = true;
         bool bilinearFilterEnabled = false;
         bool pixelArtEnabled = false;
+        bool scanlinesEnabled = false;
+        unsigned scanlineLevel = 5;
         bool fastForwardEnabled = true;
         bool rewindEnabled = false;
         RewindLevel rewindLevel = RewindLevel::Normal;

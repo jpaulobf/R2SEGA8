@@ -194,23 +194,28 @@ namespace
         window.render();
     }
 
-    void rewindLevelOption(R2SEGA8::Window::Window &window, const char *option)
+    void submenuOption(R2SEGA8::Window::Window &window, const char *menuName, const char *submenuName, const char *option)
     {
         const auto *main = ImGui::FindWindowByName("R2SEGA8");
         const auto menuBar = ImHashStr("##MenuBar", 0, main->ID);
-        ImGui::ActivateItemByID(ImHashStr("Hacks", 0, menuBar));
+        ImGui::ActivateItemByID(ImHashStr(menuName, 0, menuBar));
         window.render();
         const auto *menu = ImGui::FindWindowByName("###Menu_00");
         if (!menu || !menu->Active)
-            throw std::runtime_error("Hacks menu did not open");
-        ImGui::ActivateItemByID(ImHashStr("Rewind Level", 0, menu->ID));
+            throw std::runtime_error(std::string(menuName) + " menu did not open");
+        ImGui::ActivateItemByID(ImHashStr(submenuName, 0, menu->ID));
         window.render();
         const auto *submenu = ImGui::FindWindowByName("###Menu_01");
         if (!submenu || !submenu->Active)
-            throw std::runtime_error("Rewind Level menu did not open");
+            throw std::runtime_error(std::string(submenuName) + " menu did not open");
         ImGui::ActivateItemByID(ImHashStr(option, 0, submenu->ID));
         window.render();
         window.render();
+    }
+
+    void rewindLevelOption(R2SEGA8::Window::Window &window, const char *option)
+    {
+        submenuOption(window, "Hacks", "Rewind Level", option);
     }
 
     void fullscreenOptions(R2SEGA8::Window::Window &window, SDL_Window *native)
@@ -366,6 +371,20 @@ namespace
         ++expectedChanges;
         if (settings.pixelArtEnabled || changes != expectedChanges || !hasVideoTexture(8, 8))
             throw std::runtime_error("Disabling Pixel Art must restore nearest filtering");
+        if (settings.scanlinesEnabled || settings.scanlineLevel != 5)
+            throw std::runtime_error("Scanlines must start disabled at 5%");
+        menuOption(window, "Display", "Scanlines");
+        ++expectedChanges;
+        if (!settings.scanlinesEnabled || changes != expectedChanges)
+            throw std::runtime_error("Scanlines must be enabled through the menu");
+        submenuOption(window, "Display", "Scanline Levels", "25%");
+        ++expectedChanges;
+        if (settings.scanlineLevel != 25 || changes != expectedChanges)
+            throw std::runtime_error("Scanline level must be selectable through the submenu");
+        menuOption(window, "Display", "Scanlines");
+        ++expectedChanges;
+        if (settings.scanlinesEnabled || settings.scanlineLevel != 25 || changes != expectedChanges)
+            throw std::runtime_error("Disabling scanlines must preserve the selected level");
     }
 
     // Exercita Pause/Break e menus reais contra o mesmo estado de pausa usado pela Engine.

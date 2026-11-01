@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace R2SEGA8::Window
 {
@@ -32,6 +33,7 @@ namespace R2SEGA8::Window
         SDL_Renderer *renderer = nullptr;
         SDL_Texture *videoTexture = nullptr;
         unsigned videoWidth = 0, videoHeight = 0;
+        std::vector<std::uint8_t> scanlinePixels;
         DisplaySize nativeSize;
         unsigned displayScale = 3, pendingDisplayScale = 0;
         enum class Fullscreen
@@ -252,7 +254,27 @@ namespace R2SEGA8::Window
                                                                                                         : SDL_SCALEMODE_NEAREST))
                     throw std::runtime_error(SDL_GetError());
             }
-            if (!SDL_UpdateTexture(videoTexture, nullptr, frame.rgba, static_cast<int>(frame.pitch)))
+            const auto *pixels = frame.rgba;
+            int pitch = static_cast<int>(frame.pitch);
+            if (settings.scanlinesEnabled)
+            {
+                const auto rowBytes = static_cast<std::size_t>(frame.width) * 4;
+                scanlinePixels.resize(rowBytes * frame.height);
+                const auto level = std::clamp(settings.scanlineLevel, 5u, 25u);
+                for (unsigned y = 0; y < frame.height; ++y)
+                {
+                    const auto *source = frame.rgba + static_cast<std::size_t>(y) * frame.pitch;
+                    auto *destination = scanlinePixels.data() + static_cast<std::size_t>(y) * rowBytes;
+                    std::copy_n(source, rowBytes, destination);
+                    if (y % 2 != 0)
+                        for (std::size_t x = 0; x < rowBytes; x += 4)
+                            for (unsigned channel = 0; channel < 3; ++channel)
+                                destination[x + channel] = static_cast<std::uint8_t>(destination[x + channel] * (100 - level) / 100);
+                }
+                pixels = scanlinePixels.data();
+                pitch = static_cast<int>(rowBytes);
+            }
+            if (!SDL_UpdateTexture(videoTexture, nullptr, pixels, pitch))
                 throw std::runtime_error(SDL_GetError());
             const auto available = ImGui::GetContentRegionAvail();
             const float scale = std::min(available.x / nativeSize.width, available.y / nativeSize.height);
@@ -559,6 +581,21 @@ namespace R2SEGA8::Window
                         if (settings.pixelArtEnabled)
                             settings.bilinearFilterEnabled = false;
                         state.callbacks.setExecutionSettings(settings);
+                    }
+                    if (ImGui::MenuItem("Scanlines", nullptr, &settings.scanlinesEnabled, configurable))
+                        state.callbacks.setExecutionSettings(settings);
+                    if (ImGui::BeginMenu("Scanline Levels", configurable && settings.scanlinesEnabled))
+                    {
+                        for (unsigned level = 5; level <= 25; level += 5)
+                        {
+                            const auto label = std::to_string(level) + "%";
+                            if (ImGui::MenuItem(label.c_str(), nullptr, settings.scanlineLevel == level))
+                            {
+                                settings.scanlineLevel = level;
+                                state.callbacks.setExecutionSettings(settings);
+                            }
+                        }
+                        ImGui::EndMenu();
                     }
                     ImGui::Separator();
                     for (unsigned scale = 1; scale <= 5; ++scale)
