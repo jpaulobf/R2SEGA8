@@ -211,6 +211,26 @@ namespace R2SEGA8::Core
         // Guarda também a fase e os dados intermediários; memória e periféricos pertencem ao sistema.
         struct Snapshot
         {
+            template <class Archive>
+            void stateArchive(Archive &ar)
+            {
+                auto registers = [&](State &s)
+                {
+                    ar(s.a, s.f, s.b, s.c, s.d, s.e, s.h, s.l, s.aAlt, s.fAlt, s.bAlt, s.cAlt, s.dAlt, s.eAlt, s.hAlt, s.lAlt,
+                       s.ix, s.iy, s.sp, s.pc, s.wz, s.i, s.r, s.im, s.q, s.iff1, s.iff2, s.halted, s.irq, s.nmiLine, s.nmiPending,
+                       s.p, s.wait, s.busRequest, s.eiDelay, s.prefix, s.cycles);
+                };
+                auto transfer = [&](Cycle &c)
+                { ar(c.kind, c.address, c.refreshAddress, c.data, c.result, c.phase, c.length); };
+                registers(state);
+                registers(initial);
+                ar(pins.address, pins.data, pins.signals, pins.addressValid, pins.dataValid);
+                for (auto &c : completed)
+                    transfer(c);
+                transfer(cycle);
+                ar(completedCount, active);
+            }
+
         private:
             friend class Z80;
             State state, initial;

@@ -312,6 +312,18 @@ namespace R2SEGA8::Core
 
     void Z80::restore(const Snapshot &saved)
     {
+        const auto validState = [](const State &s)
+        { return s.im <= 2 && s.eiDelay <= 2 &&
+                 (s.prefix == 0 || s.prefix == 0xdd || s.prefix == 0xfd); };
+        const auto validCycle = [](const Cycle &c)
+        { return static_cast<unsigned>(c.kind) <= static_cast<unsigned>(CycleKind::Reti) &&
+                 c.phase <= c.length && c.length <= 64; };
+        if (!validState(saved.state) || !validState(saved.initial) || saved.completedCount > saved.completed.size() ||
+            !validCycle(saved.cycle))
+            throw std::invalid_argument("Invalid Z80 snapshot.");
+        for (unsigned i = 0; i < saved.completedCount; ++i)
+            if (!validCycle(saved.completed[i]))
+                throw std::invalid_argument("Invalid Z80 cycle snapshot.");
         // O snapshot é opaco: todos os campos foram produzidos pela própria CPU.
         active_ = false;
         installState(saved.state);
