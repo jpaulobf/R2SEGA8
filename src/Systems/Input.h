@@ -1,5 +1,6 @@
 #pragma once
 #include "Common/Buttons.h"
+#include "Common/ExecutionSettings.h"
 #include <SDL3/SDL.h>
 #include <map>
 #include <memory>
@@ -33,13 +34,16 @@ namespace R2SEGA8::Systems
         void handleEvent(const SDL_Event &event, bool enabled);
 
         // Retorna intenções dos dois jogadores; turbo permanece lógico para seguir o clock emulado na placa.
-        Common::InputState update(bool enabled = true);
+        Common::InputState update(bool enabled = true, const Common::ExecutionSettings &settings = {});
 
-        // Esquece teclas memorizadas e TAB; os gamepads são amostrados novamente em update.
+        // Esquece teclas memorizadas; os gamepads são amostrados novamente em update.
         void clear();
 
-        // TAB permanece ativo até soltura, perda de foco ou captura pela interface; não é um botão do console.
-        bool isFastForwardPressed() const { return fastForwardPressed_; }
+        // TAB ou o gatilho direito de qualquer gamepad mantém o avanço rápido ativo.
+        bool isFastForwardPressed() const;
+
+        // CAPSLOCK ou o gatilho esquerdo de qualquer gamepad mantém o rewind ativo.
+        bool isRewindPressed() const;
 
         // Associa uma tecla a um botão/jogador e descarta sua pressão anterior.
         void mapKey(SDL_Keycode key, Common::Button button, unsigned player = 0);
@@ -74,5 +78,6 @@ namespace R2SEGA8::Systems
         std::map<SDL_JoystickID, Device> gamepads_;
         bool initialized_ = false;
         bool fastForwardPressed_ = false;
+        bool rewindPressed_ = false;
     };
 }

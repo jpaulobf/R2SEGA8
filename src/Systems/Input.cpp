@@ -15,20 +15,20 @@ namespace R2SEGA8::Systems
             mapKey(key, Button::Left);
         for (auto key : {SDLK_D, SDLK_RIGHT})
             mapKey(key, Button::Right);
-        mapKey(SDLK_K, Button::B);
-        mapKey(SDLK_J, Button::A);
-        mapKey(SDLK_I, Button::TurboB);
-        mapKey(SDLK_U, Button::TurboA);
+        mapKey(SDLK_K, Button::A);
+        mapKey(SDLK_J, Button::B);
+        mapKey(SDLK_I, Button::TurboA);
+        mapKey(SDLK_U, Button::TurboB);
         mapKey(SDLK_BACKSPACE, Button::Select);
         mapKey(SDLK_RETURN, Button::Start);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_UP, Button::Up);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::Down);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::Left);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::Right);
-        mapGamepad(SDL_GAMEPAD_BUTTON_SOUTH, Button::A);
-        mapGamepad(SDL_GAMEPAD_BUTTON_EAST, Button::B);
-        mapGamepad(SDL_GAMEPAD_BUTTON_WEST, Button::TurboA);
-        mapGamepad(SDL_GAMEPAD_BUTTON_NORTH, Button::TurboB);
+        mapGamepad(SDL_GAMEPAD_BUTTON_EAST, Button::A);
+        mapGamepad(SDL_GAMEPAD_BUTTON_SOUTH, Button::B);
+        mapGamepad(SDL_GAMEPAD_BUTTON_NORTH, Button::TurboA);
+        mapGamepad(SDL_GAMEPAD_BUTTON_WEST, Button::TurboB);
         mapGamepad(SDL_GAMEPAD_BUTTON_BACK, Button::Select);
         mapGamepad(SDL_GAMEPAD_BUTTON_START, Button::Start);
     }
@@ -74,6 +74,29 @@ namespace R2SEGA8::Systems
     {
         pressedKeys_.clear();
         fastForwardPressed_ = false;
+        rewindPressed_ = false;
+    }
+
+    bool Input::isFastForwardPressed() const
+    {
+        if (fastForwardPressed_)
+            return true;
+        for (const auto &entry : gamepads_)
+            if (SDL_GamepadConnected(entry.second.handle.get()) &&
+                SDL_GetGamepadAxis(entry.second.handle.get(), SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000)
+                return true;
+        return false;
+    }
+
+    bool Input::isRewindPressed() const
+    {
+        if (rewindPressed_)
+            return true;
+        for (const auto &entry : gamepads_)
+            if (SDL_GamepadConnected(entry.second.handle.get()) &&
+                SDL_GetGamepadAxis(entry.second.handle.get(), SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000)
+                return true;
+        return false;
     }
 
     void Input::openGamepad(SDL_JoystickID id)
@@ -124,12 +147,16 @@ namespace R2SEGA8::Systems
             pressedKeys_.erase(event.key.key);
             if (event.key.key == SDLK_TAB)
                 fastForwardPressed_ = false;
+            if (event.key.key == SDLK_CAPSLOCK)
+                rewindPressed_ = false;
         }
         else if (event.type == SDL_EVENT_KEY_DOWN && enabled && !event.key.repeat &&
                  !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)))
         {
             if (event.key.key == SDLK_TAB)
                 fastForwardPressed_ = true;
+            if (event.key.key == SDLK_CAPSLOCK)
+                rewindPressed_ = true;
             if (keyMap_.count(event.key.key))
                 pressedKeys_.insert(event.key.key);
         }
@@ -137,7 +164,7 @@ namespace R2SEGA8::Systems
             clear();
     }
 
-    Common::InputState Input::update(bool enabled)
+    Common::InputState Input::update(bool enabled, const Common::ExecutionSettings &settings)
     {
         Common::InputState result{};
         if (!enabled)
@@ -170,6 +197,33 @@ namespace R2SEGA8::Systems
                 buttons |= Common::mask(Common::Button::Up);
             if (y > deadZone)
                 buttons |= Common::mask(Common::Button::Down);
+        }
+        using Common::Button;
+        const auto actionMask = Common::mask(Button::A) | Common::mask(Button::B) |
+                                Common::mask(Button::TurboA) | Common::mask(Button::TurboB);
+        for (auto &buttons : result)
+        {
+            const auto original = buttons;
+            if (settings.invertT1112Enabled)
+            {
+                buttons &= ~actionMask;
+                if (original & Common::mask(Button::TurboA))
+                    buttons |= Common::mask(Button::TurboB);
+                if (original & Common::mask(Button::TurboB))
+                    buttons |= Common::mask(Button::B);
+                if (original & Common::mask(Button::B))
+                    buttons |= Common::mask(Button::A);
+                if (original & Common::mask(Button::A))
+                    buttons |= Common::mask(Button::TurboA);
+            }
+            else if (settings.invert12Enabled)
+            {
+                buttons &= ~(Common::mask(Button::A) | Common::mask(Button::B));
+                if (original & Common::mask(Button::A))
+                    buttons |= Common::mask(Button::B);
+                if (original & Common::mask(Button::B))
+                    buttons |= Common::mask(Button::A);
+            }
         }
         return result;
     }
