@@ -26,6 +26,8 @@ namespace R2SEGA8::Window
         // Indica um diálogo aberto ou solicitado para bloquear comandos de jogo antes de desenhá-lo.
         bool isOpen() const { return requested_ || open_; }
 
+        const std::vector<std::filesystem::path> &recentFiles() const { return recentFiles_; }
+
     private:
         // Guarda o caminho, o nome de exibição e o tipo de uma entrada da pasta.
         struct Entry
@@ -47,9 +49,14 @@ namespace R2SEGA8::Window
         // Em outras plataformas, não desenha controles.
         void drawDriveSelector();
 
+        void readConfig();
+        void recordRecent(const std::filesystem::path &path);
+
         Callbacks::OpenRom openHandler_;
         std::filesystem::path directory_;
         std::vector<Entry> entries_;
+        std::vector<std::filesystem::path> recentFiles_;
+        std::filesystem::path lastRomDirectory_;
         std::optional<std::filesystem::path> pendingFile_;
         std::string pathLabel_;
         std::string error_;

@@ -1,6 +1,7 @@
 #include "FileManager.h"
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 #include <imgui.h>
 #include <stdexcept>
 #include <utility>
@@ -20,6 +21,73 @@ namespace R2SEGA8::Window
         directory_ = std::filesystem::current_path(error);
         if (error)
             directory_ = ".";
+        readConfig();
+    }
+
+    void FileManager::readConfig()
+    {
+        std::ifstream input("resources/config.ini", std::ios::binary);
+        std::string line;
+        std::filesystem::path recent[10];
+        while (std::getline(input, line))
+        {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            const auto separator = line.find('=');
+            if (separator == std::string::npos)
+                continue;
+            const auto key = line.substr(0, separator);
+            const auto value = line.substr(separator + 1);
+            if (key == "last_rom_path" && !value.empty())
+                lastRomDirectory_ = std::filesystem::u8path(value);
+            for (int i = 0; i < 10; ++i)
+                if (key == "f" + std::to_string(i + 1) && !value.empty())
+                    recent[i] = std::filesystem::u8path(value);
+        }
+        for (const auto &path : recent)
+            if (!path.empty() && std::find(recentFiles_.begin(), recentFiles_.end(), path) == recentFiles_.end())
+                recentFiles_.push_back(path);
+        std::error_code error;
+        if (!lastRomDirectory_.empty() && std::filesystem::is_directory(lastRomDirectory_, error))
+            directory_ = lastRomDirectory_;
+    }
+
+    void FileManager::recordRecent(const std::filesystem::path &path)
+    {
+        const auto absolute = std::filesystem::absolute(path).lexically_normal();
+        recentFiles_.erase(std::remove(recentFiles_.begin(), recentFiles_.end(), absolute), recentFiles_.end());
+        recentFiles_.insert(recentFiles_.begin(), absolute);
+        if (recentFiles_.size() > 10)
+            recentFiles_.resize(10);
+        lastRomDirectory_ = absolute.parent_path();
+        directory_ = lastRomDirectory_;
+
+        std::ifstream input("resources/config.ini", std::ios::binary);
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(input, line))
+        {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            const auto separator = line.find('=');
+            const auto key = line.substr(0, separator);
+            bool managed = separator != std::string::npos && key == "last_rom_path";
+            for (int i = 1; i <= 10; ++i)
+                managed = managed || (separator != std::string::npos && key == "f" + std::to_string(i));
+            if (!managed)
+                lines.push_back(line);
+        }
+        input.close();
+        std::error_code error;
+        std::filesystem::create_directories("resources", error);
+        std::ofstream output("resources/config.ini", std::ios::binary | std::ios::trunc);
+        if (!output)
+            return;
+        for (const auto &existing : lines)
+            output << existing << '\n';
+        for (std::size_t i = 0; i < 10; ++i)
+            output << 'f' << i + 1 << '=' << (i < recentFiles_.size() ? recentFiles_[i].u8string() : "") << '\n';
+        output << "last_rom_path=" << lastRomDirectory_.u8string() << '\n';
     }
 
     void FileManager::navigate(const std::filesystem::path &path)
@@ -83,6 +151,14 @@ namespace R2SEGA8::Window
         if (!openHandler_)
             throw std::runtime_error("ROM loading is unavailable.");
         openHandler_(path, system);
+        try
+        {
+            recordRecent(path);
+        }
+        catch (const std::exception &)
+        {
+            // A falha ao salvar preferências não desfaz uma ROM já carregada.
+        }
         error_.clear();
         open_ = false;
         ImGui::CloseCurrentPopup();
@@ -96,7 +172,13 @@ namespace R2SEGA8::Window
         try
         {
             if (file.empty())
-                navigate(directory_);
+            {
+                std::error_code error;
+                if (!lastRomDirectory_.empty() && std::filesystem::is_directory(lastRomDirectory_, error))
+                    navigate(lastRomDirectory_);
+                else
+                    navigate(directory_);
+            }
             else
             {
                 const auto absolute = std::filesystem::absolute(file).lexically_normal();
