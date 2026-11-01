@@ -34,6 +34,14 @@ namespace R2SEGA8::Window
         unsigned videoWidth = 0, videoHeight = 0;
         DisplaySize nativeSize;
         unsigned displayScale = 3, pendingDisplayScale = 0;
+        enum class Fullscreen
+        {
+            None,
+            Stretched,
+            Aspect
+        };
+        Fullscreen fullscreen = Fullscreen::None, pendingFullscreen = Fullscreen::None;
+        unsigned stateSlot = 1;
         SDL_DisplayID centerDisplay = 0;
         int fixedWidth = 0, fixedHeight = 0;
         float menuHeight = 0;
@@ -85,7 +93,7 @@ namespace R2SEGA8::Window
         // Corrige tamanhos arbitrários sem impor limites que impeçam a maximização do gerenciador de janelas.
         void enforceDisplaySize()
         {
-            if (maximized || (SDL_GetWindowFlags(window) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED)))
+            if (fullscreen != Fullscreen::None || maximized || (SDL_GetWindowFlags(window) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED)))
                 return;
             int width = 0, height = 0;
             if (!SDL_GetWindowSize(window, &width, &height))
@@ -93,6 +101,20 @@ namespace R2SEGA8::Window
             if (width != fixedWidth || height != fixedHeight)
                 if (!SDL_SetWindowSize(window, fixedWidth, fixedHeight))
                     throw std::runtime_error(SDL_GetError());
+        }
+        void setFullscreen(Fullscreen mode)
+        {
+            if (mode != Fullscreen::None && !SDL_SetWindowFullscreenMode(window, nullptr))
+                throw std::runtime_error(SDL_GetError());
+            if (!SDL_SetWindowFullscreen(window, mode != Fullscreen::None))
+                throw std::runtime_error(SDL_GetError());
+            fullscreen = mode;
+            if (mode == Fullscreen::None)
+            {
+                if (!SDL_SyncWindow(window))
+                    throw std::runtime_error(SDL_GetError());
+                resizeDisplay(displayScale);
+            }
         }
         bool sdlReady = false;
         bool contextReady = false;
@@ -104,6 +126,8 @@ namespace R2SEGA8::Window
         {
             if (!contextReady || !running || !focused || minimized || files.isOpen())
                 return false;
+            if (fullscreen != Fullscreen::None)
+                return true;
             const auto &io = ImGui::GetIO();
             return !io.WantCaptureKeyboard && !io.WantTextInput &&
                    !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
@@ -111,8 +135,8 @@ namespace R2SEGA8::Window
         // Publica pausa de menus e disponibilidade de entrada também nos quadros sem eventos SDL.
         void notifyInput()
         {
-            const bool menuPaused = files.isOpen() ||
-                                    (contextReady && ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel));
+            const bool menuPaused = fullscreen == Fullscreen::None && (files.isOpen() ||
+                                                                       (contextReady && ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)));
             if (menuPaused != reportedMenuPause)
             {
                 reportedMenuPause = menuPaused;
@@ -183,6 +207,26 @@ namespace R2SEGA8::Window
                 updateTitle();
             }
         }
+        struct PixelArtDraw
+        {
+            SDL_Renderer *renderer;
+            SDL_Texture *texture;
+            SDL_FRect destination;
+        };
+        // O backend ImGui sobrescreve o filtro das imagens; desenha Pixel Art diretamente pela SDL.
+        static void drawPixelArt(const ImDrawList *, const ImDrawCmd *command)
+        {
+            const auto &draw = *static_cast<const PixelArtDraw *>(command->UserCallbackData);
+            SDL_Rect clip{};
+            const bool clipped = SDL_RenderClipEnabled(draw.renderer);
+            if ((clipped && !SDL_GetRenderClipRect(draw.renderer, &clip)) ||
+                !SDL_SetRenderClipRect(draw.renderer, nullptr) ||
+                !SDL_SetTextureScaleMode(draw.texture, SDL_SCALEMODE_PIXELART) ||
+                !SDL_RenderTexture(draw.renderer, draw.texture, nullptr, &draw.destination) ||
+                !SDL_SetRenderClipRect(draw.renderer, clipped ? &clip : nullptr))
+                throw std::runtime_error(SDL_GetError());
+        }
+
         // Copia um quadro neutro para a textura; os bytes do callback não escapam desta chamada.
         void drawFrame(FrameView frame)
         {
@@ -191,6 +235,9 @@ namespace R2SEGA8::Window
             const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max());
             if (frame.width > limit / 4 || frame.height > limit || frame.pitch > limit || frame.pitch < frame.width * 4)
                 throw std::invalid_argument("Invalid presentation frame dimensions or pitch.");
+            const auto settings = callbacks.executionSettings ? callbacks.executionSettings() : Common::ExecutionSettings{};
+            const bool pixelArt = settings.pixelArtEnabled;
+            const bool bilinear = settings.bilinearFilterEnabled && !pixelArt;
             if (!videoTexture || videoWidth != frame.width || videoHeight != frame.height)
             {
                 if (videoTexture)
@@ -201,23 +248,37 @@ namespace R2SEGA8::Window
                     throw std::runtime_error(SDL_GetError());
                 videoWidth = frame.width;
                 videoHeight = frame.height;
-                if (!SDL_SetTextureScaleMode(videoTexture, SDL_SCALEMODE_NEAREST))
+                if (!SDL_SetTextureScaleMode(videoTexture, pixelArt ? SDL_SCALEMODE_PIXELART : bilinear ? SDL_SCALEMODE_LINEAR
+                                                                                                        : SDL_SCALEMODE_NEAREST))
                     throw std::runtime_error(SDL_GetError());
             }
             if (!SDL_UpdateTexture(videoTexture, nullptr, frame.rgba, static_cast<int>(frame.pitch)))
                 throw std::runtime_error(SDL_GetError());
             const auto available = ImGui::GetContentRegionAvail();
             const float scale = std::min(available.x / nativeSize.width, available.y / nativeSize.height);
-            const ImVec2 size(nativeSize.width * scale, nativeSize.height * scale);
+            const ImVec2 size = fullscreen == Fullscreen::Stretched ? available : ImVec2(nativeSize.width * scale, nativeSize.height * scale);
             if (scale > 0)
             {
                 // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
                 const auto position = ImGui::GetCursorScreenPos();
                 ImGui::SetCursorScreenPos(ImVec2(position.x + (available.x - size.x) * 0.5f, position.y + (available.y - size.y) * 0.5f));
-                // O backend escolhe o filtro ao desenhar; limita nearest à imagem de vídeo.
-                ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest, nullptr);
-                ImGui::Image(reinterpret_cast<ImTextureID>(videoTexture), size);
-                ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
+                if (pixelArt)
+                {
+                    const auto origin = ImGui::GetCursorScreenPos();
+                    const auto viewport = ImGui::GetMainViewport()->Pos;
+                    PixelArtDraw draw{renderer, videoTexture, {origin.x - viewport.x, origin.y - viewport.y, size.x, size.y}};
+                    ImGui::GetWindowDrawList()->AddCallback(drawPixelArt, &draw, sizeof(draw));
+                    ImGui::Dummy(size);
+                }
+                else
+                {
+                    // O backend aplica o sampler selecionado à textura de vídeo ao desenhar.
+                    ImGui::GetWindowDrawList()->AddCallback(bilinear ? ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear
+                                                                     : ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest,
+                                                            nullptr);
+                    ImGui::Image(reinterpret_cast<ImTextureID>(videoTexture), size);
+                    ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
+                }
             }
         }
         // Libera somente os recursos cuja inicialização foi concluída.
@@ -359,11 +420,12 @@ namespace R2SEGA8::Window
                 {
                     state.minimized = false;
                     state.maximized = false;
-                    state.resizeDisplay(state.displayScale);
+                    if (state.fullscreen == Impl::Fullscreen::None)
+                        state.resizeDisplay(state.displayScale);
                 }
                 if (event.type == SDL_EVENT_WINDOW_RESIZED)
                     state.enforceDisplaySize();
-                if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED && !state.maximized)
+                if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED && !state.maximized && state.fullscreen == Impl::Fullscreen::None)
                     state.resizeDisplay(state.displayScale);
             }
             if (event.type == SDL_EVENT_QUIT ||
@@ -372,18 +434,33 @@ namespace R2SEGA8::Window
             if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F12 &&
                 !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)) && !state.files.isOpen())
                 state.requestReset();
+            if (ownEvent && state.focused && !state.minimized && !state.files.isOpen() && event.type == SDL_EVENT_KEY_DOWN &&
+                !event.key.repeat && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)) &&
+                state.callbacks.canSaveState && state.callbacks.canSaveState())
+            {
+                if (event.key.key == SDLK_F5 && state.callbacks.saveState)
+                    state.callbacks.saveState(state.stateSlot);
+                if (event.key.key == SDLK_F6 && state.callbacks.loadState)
+                    state.callbacks.loadState(state.stateSlot);
+            }
             // Pause/Break é uma ação da aplicação: continua disponível quando o jogo está pausado ou um menu captura o teclado.
             if (ownEvent && state.focused && !state.minimized && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                 event.key.key == SDLK_PAUSE && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)) &&
                 state.callbacks.togglePause && state.callbacks.hasRom && state.callbacks.hasRom())
                 state.callbacks.togglePause();
-            if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.mod & SDL_KMOD_CTRL) &&
+            if (ownEvent && state.fullscreen != Impl::Fullscreen::None && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                event.key.key == SDLK_ESCAPE)
+            {
+                state.setFullscreen(Impl::Fullscreen::None);
+                continue;
+            }
+            if (ownEvent && state.fullscreen == Impl::Fullscreen::None && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.mod & SDL_KMOD_CTRL) &&
                 !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI)) && event.key.key >= SDLK_1 && event.key.key <= SDLK_5)
                 state.resizeDisplay(static_cast<unsigned>(event.key.key - SDLK_1 + 1));
-            if (ownEvent && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_O &&
+            if (ownEvent && state.fullscreen == Impl::Fullscreen::None && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_O &&
                 (event.key.mod & SDL_KMOD_CTRL))
                 state.files.requestOpen();
-            if (event.type == SDL_EVENT_DROP_FILE && event.drop.data)
+            if (state.fullscreen == Impl::Fullscreen::None && event.type == SDL_EVENT_DROP_FILE && event.drop.data)
                 state.files.requestOpen(std::filesystem::u8path(event.drop.data));
             if (ownEvent && state.callbacks.inputEvent)
                 state.callbacks.inputEvent(event, state.acceptsInput());
@@ -408,17 +485,18 @@ namespace R2SEGA8::Window
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
         const auto *viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->WorkSize);
+        const bool fullscreen = state.fullscreen != Impl::Fullscreen::None;
+        ImGui::SetNextWindowPos(fullscreen ? viewport->Pos : viewport->WorkPos);
+        ImGui::SetNextWindowSize(fullscreen ? viewport->Size : viewport->WorkSize);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         const bool visible = ImGui::Begin("R2SEGA8", nullptr,
                                           ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                              ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                                              (fullscreen ? 0 : ImGuiWindowFlags_MenuBar) | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::PopStyleVar(2);
         if (visible)
         {
-            if (ImGui::BeginMenuBar())
+            if (!fullscreen && ImGui::BeginMenuBar())
             {
                 if (ImGui::BeginMenu("File"))
                 {
@@ -430,6 +508,35 @@ namespace R2SEGA8::Window
                     if (ImGui::MenuItem("Unload", nullptr, false, loaded && static_cast<bool>(state.callbacks.unload)))
                         state.requestUnload();
                     ImGui::Separator();
+                    const bool canState = state.callbacks.canSaveState && state.callbacks.canSaveState();
+                    if (ImGui::MenuItem("Save State", "F5", false, canState && static_cast<bool>(state.callbacks.saveState)))
+                        state.callbacks.saveState(state.stateSlot);
+                    if (ImGui::MenuItem("Load State", "F6", false, canState && static_cast<bool>(state.callbacks.loadState)))
+                        state.callbacks.loadState(state.stateSlot);
+                    if (ImGui::BeginMenu("Save State Slot", canState))
+                    {
+                        for (unsigned slot = 1; slot <= 3; ++slot)
+                        {
+                            const auto label = std::string("Slot ") + std::to_string(slot);
+                            if (ImGui::MenuItem(label.c_str(), nullptr, state.stateSlot == slot))
+                                state.stateSlot = slot;
+                        }
+                        ImGui::EndMenu();
+                    }
+                    ImGui::Separator();
+                    if (ImGui::BeginMenu("Recent Files", !state.files.recentFiles().empty()))
+                    {
+                        const auto &recent = state.files.recentFiles();
+                        for (std::size_t i = 0; i < recent.size(); ++i)
+                        {
+                            ImGui::PushID(static_cast<int>(i));
+                            const auto name = recent[i].filename().u8string();
+                            if (ImGui::MenuItem(name.c_str()))
+                                state.files.requestOpen(recent[i]);
+                            ImGui::PopID();
+                        }
+                        ImGui::EndMenu();
+                    }
                     if (ImGui::MenuItem("Exit"))
                         state.requestExit();
                     ImGui::EndMenu();
@@ -441,6 +548,19 @@ namespace R2SEGA8::Window
                     if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
                         state.callbacks.setExecutionSettings(settings);
                     ImGui::Separator();
+                    if (ImGui::MenuItem("Bilinear Filter", nullptr, &settings.bilinearFilterEnabled, configurable))
+                    {
+                        if (settings.bilinearFilterEnabled)
+                            settings.pixelArtEnabled = false;
+                        state.callbacks.setExecutionSettings(settings);
+                    }
+                    if (ImGui::MenuItem("Pixel Art", nullptr, &settings.pixelArtEnabled, configurable))
+                    {
+                        if (settings.pixelArtEnabled)
+                            settings.bilinearFilterEnabled = false;
+                        state.callbacks.setExecutionSettings(settings);
+                    }
+                    ImGui::Separator();
                     for (unsigned scale = 1; scale <= 5; ++scale)
                     {
                         char label[] = "1X", shortcut[] = "Ctrl+1";
@@ -449,6 +569,11 @@ namespace R2SEGA8::Window
                         if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
                             state.pendingDisplayScale = scale;
                     }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Borderless Fullscreen Stretched"))
+                        state.pendingFullscreen = Impl::Fullscreen::Stretched;
+                    if (ImGui::MenuItem("Borderless Fullscreen"))
+                        state.pendingFullscreen = Impl::Fullscreen::Aspect;
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("Audio", state.callbacks.audioSettings && state.callbacks.setAudioSettings))
@@ -474,10 +599,44 @@ namespace R2SEGA8::Window
                         state.callbacks.setAudioSettings(settings);
                     ImGui::EndMenu();
                 }
+                if (ImGui::BeginMenu("Input", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
+                {
+                    auto settings = state.callbacks.executionSettings();
+                    if (ImGui::MenuItem("Invert buttons: 1 and 2", nullptr, &settings.invert12Enabled))
+                    {
+                        settings.invertT1112Enabled = false;
+                        state.callbacks.setExecutionSettings(settings);
+                    }
+
+                    if (ImGui::MenuItem("Change buttons: T1 goes 1, T2 goes T1, 2 goes T2, 1 goes 2", nullptr, &settings.invertT1112Enabled))
+                    {
+                        settings.invert12Enabled = false;
+                        state.callbacks.setExecutionSettings(settings);
+                    }
+                    ImGui::EndMenu();
+                }
                 if (ImGui::BeginMenu("Hacks", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
                 {
                     auto settings = state.callbacks.executionSettings();
-                    if (ImGui::MenuItem("Enable Fast-Forward", "Tab (hold)", &settings.fastForwardEnabled))
+                    if (ImGui::MenuItem("Enable Fast-Forward", "Tab / R2 (hold)", &settings.fastForwardEnabled))
+                        state.callbacks.setExecutionSettings(settings);
+                    if (ImGui::MenuItem("Enable Rewind", "Caps Lock / L2 (hold)", &settings.rewindEnabled))
+                        state.callbacks.setExecutionSettings(settings);
+                    if (ImGui::BeginMenu("Rewind Level", settings.rewindEnabled))
+                    {
+                        using R2SEGA8::Common::RewindLevel;
+                        for (const auto &option : {std::pair{"Light", RewindLevel::Light},
+                                                   std::pair{"Normal", RewindLevel::Normal},
+                                                   std::pair{"Precise", RewindLevel::Precise}})
+                            if (ImGui::MenuItem(option.first, nullptr, settings.rewindLevel == option.second))
+                            {
+                                settings.rewindLevel = option.second;
+                                state.callbacks.setExecutionSettings(settings);
+                            }
+                        ImGui::EndMenu();
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Enable Unlimited Sprites", nullptr, &settings.unlimitedSpritesEnabled))
                         state.callbacks.setExecutionSettings(settings);
                     ImGui::EndMenu();
                 }
@@ -486,14 +645,15 @@ namespace R2SEGA8::Window
             if (state.callbacks.frame)
                 state.drawFrame(state.callbacks.frame());
             // Consome as consultas antes das ações, que podem invalidar os bytes apresentados.
-            state.files.draw();
+            if (!fullscreen)
+                state.files.draw();
         }
         ImGui::End();
         ImGui::Render();
         state.notifyInput();
         const auto &io = ImGui::GetIO();
         if (!SDL_SetRenderScale(state.renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y) ||
-            !SDL_SetRenderDrawColor(state.renderer, 18, 21, 28, 255) || !SDL_RenderClear(state.renderer))
+            !SDL_SetRenderDrawColor(state.renderer, fullscreen ? 0 : 18, fullscreen ? 0 : 21, fullscreen ? 0 : 28, 255) || !SDL_RenderClear(state.renderer))
             throw std::runtime_error(SDL_GetError());
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), state.renderer);
         if (!SDL_RenderPresent(state.renderer))
@@ -504,6 +664,13 @@ namespace R2SEGA8::Window
             const auto scale = state.pendingDisplayScale;
             state.pendingDisplayScale = 0;
             state.resizeDisplay(scale);
+        }
+        if (state.pendingFullscreen != Impl::Fullscreen::None)
+        {
+            const auto mode = state.pendingFullscreen;
+            state.pendingFullscreen = Impl::Fullscreen::None;
+            state.setFullscreen(mode);
+            state.notifyInput();
         }
     }
 }
