@@ -28,6 +28,7 @@ reprodução SDL3, sem participação da Window. Veja [áudio do SG-1000](SN7648
 | `src/Core/Systems` | Placas concretas dos consoles, mapas de memória, portas e conexão dos componentes emulados. |
 | `src/Systems` | Engine, fábrica de placas e suporte do computador: entrada SDL, reprodução de áudio e temporização. |
 | `src/Systems/BoardFactory.h/.cpp` | Seleção e construção das placas do Core, sem levar essa seleção para o contrato Board. |
+| `src/Systems/SaveStateStore.h/.cpp` | Identificação dos slots e persistência dos estados em disco, independente da interface. |
 | `src/Core/Board.h` | Contrato da placa emulada, reunindo CPU, cartucho, RAM e barramento. |
 | `src/Systems/Engine.cpp` | Inicialização da aplicação e coordenação de eventos, carregamento, emulação e apresentação. |
 | `src/Emulator.cpp` | Ponto de entrada que instancia `Systems::Engine` e chama `run()`. |

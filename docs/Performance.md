@@ -1,5 +1,23 @@
 # Investigação do avanço rápido — 30/10/2026
 
+## Revisão de execução e estados — 31/10/2026
+
+Uma medição local em Windows Release, sem janela, usou uma ROM sintética
+com CPU, VDP e PSG ativos. Em três execuções, o tempo mediano para 600
+quadros passou de 1.418 ms para 1.392 ms. É uma diferença pequena, sujeita
+a ruído, e não representa uma garantia de desempenho com jogos reais.
+
+Na mesma máquina, 150 gravações de estado passaram de 167 ms para 81 ms,
+e 150 restaurações passaram de 97 ms para 53 ms. A serialização agora copia
+arrays e vetores de bytes em blocos, e a leitura verifica o checksum sem
+copiar todo o conteúdo do arquivo. O estado gerado na medição manteve 416.926
+bytes e hash `61a5658bb572bf78`. O número de quadro consultado a cada
+T-state também passou a ser lido diretamente, sem montar uma visão de vídeo.
+
+Esses resultados medem operações do núcleo, não a interface, o disco ou a
+latência de um controle físico. O programa e a ROM sintética usados na medição
+ficam em `build/performance_session_probe.cpp`, fora do controle de versão.
+
 ## Gargalo confirmado
 
 O modo de avanço rápido já removia sleep e VSync, mas a execução da máquina

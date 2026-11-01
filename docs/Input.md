@@ -39,6 +39,17 @@ de botões do console. Soltura, captura, perda de foco e minimização liberam
 o estado memorizado; o áudio fica silenciado durante o avanço rápido.
 Veja [Display.md](Display.md) para os três modos de execução.
 
+CAPSLOCK ou L2 mantido solicita rewind, quando habilitado em `Hacks > Enable
+Rewind`. A opção começa desabilitada; `Rewind Level` escolhe Light (um estado
+a cada 10 quadros), Normal (a cada 5, padrão) ou Precise (a cada 2 quadros).
+O histórico cobre até 10 segundos emulados e o áudio fica em silêncio durante
+o rewind. Trocar ROM, reiniciar, carregar um estado ou alterar o nível limpa o
+histórico. Ao soltar o controle, a execução continua a partir do estado visto.
+O rewind tem prioridade se seus controles e os do avanço rápido forem mantidos
+ao mesmo tempo. Ele requer uma máquina com suporte a save state.
+No SG-1000, o nível Precise pode usar aproximadamente 120 MiB para os dez
+segundos; Normal e Light usam aproximadamente 48 MiB e 24 MiB, respectivamente.
+
 Pause/Break alterna a pausa manual pela callback da janela, sem integrar o
 enum de botões do console. Menus e diálogos pausam temporariamente e não
 removem essa intenção manual ao fechar. Durante a pausa, entradas de jogo
