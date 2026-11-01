@@ -245,6 +245,30 @@ int main()
         check(settings.master.gain() == 0, "Negative presentation volume must clamp to zero");
         settings.master.volume = 200;
         check(settings.master.gain() == 1, "Presentation volume above 100 must clamp to unity");
+        PSG savedPsg;
+        tone(savedPsg, 0, 127);
+        savedPsg.runClocks(12345);
+        const auto snapshot = savedPsg.snapshot();
+        savedPsg.takeSamples(part);
+        savedPsg.runClocks(24680);
+        savedPsg.takeSamples(expected);
+        savedPsg.restore(snapshot);
+        savedPsg.runClocks(24680);
+        savedPsg.takeSamples(part);
+        check(part == expected, "Restored PSG must reproduce subsequent PCM exactly");
+        auto invalidSnapshot = snapshot;
+        invalidSnapshot.state.attenuation[0] = 16;
+        bool invalidRejected = false;
+        try
+        {
+            savedPsg.restore(invalidSnapshot);
+        }
+        catch (const std::invalid_argument &)
+        {
+            invalidRejected = true;
+        }
+        check(invalidRejected && savedPsg.state().clocks == snapshot.state.clocks + 24680,
+              "Invalid snapshot must not modify PSG");
         std::cout << "SN76489AN tests passed\n";
     }
     catch (const std::exception &error)

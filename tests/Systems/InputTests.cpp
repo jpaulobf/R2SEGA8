@@ -160,6 +160,34 @@ namespace
         check(!input.isFastForwardPressed(), "Input shutdown must release TAB");
     }
 
+    void gamepadFastForward()
+    {
+        Pad first;
+        Pad second;
+        first.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, -32768);
+        second.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, -32768);
+        Input input;
+        check(input.initialize(), SDL_GetError());
+        pump(input);
+        check(!input.isFastForwardPressed(), "Released triggers must not activate fast-forward");
+        first.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 32767);
+        pump(input);
+        check(input.isFastForwardPressed() && input.update() == R2SEGA8::Common::InputState{},
+              "R2 must activate fast-forward without pressing a console button");
+        key(input, SDLK_TAB, true);
+        first.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, -32768);
+        pump(input);
+        check(input.isFastForwardPressed(), "Releasing R2 must preserve a held keyboard shortcut");
+        key(input, SDLK_TAB, false);
+        check(!input.isFastForwardPressed(), "Releasing both sources must stop fast-forward");
+        second.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 32767);
+        pump(input);
+        check(input.isFastForwardPressed(), "The second gamepad can activate fast-forward");
+        second.detach();
+        pump(input);
+        check(!input.isFastForwardPressed(), "Disconnecting the active gamepad must stop fast-forward");
+    }
+
     // Verifica dispositivos anteriores à inicialização, hotplug, mapeamento, mistura de fontes e vagas estáveis.
     void gamepads()
     {
@@ -172,6 +200,31 @@ namespace
         Pad second;
         pump(input);
         check(input.gamepadCount() == 2, "Hotplug must open the second player");
+        R2SEGA8::Common::ExecutionSettings settings;
+        const SDL_Keycode keys[] = {SDLK_J, SDLK_K, SDLK_U, SDLK_I};
+        const SDL_GamepadButton physical[] = {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
+                                              SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH};
+        const Button normal[] = {Button::A, Button::B, Button::TurboA, Button::TurboB};
+        const Button inverted[] = {Button::B, Button::A, Button::TurboA, Button::TurboB};
+        const Button changed[] = {Button::B, Button::TurboB, Button::A, Button::TurboA};
+        for (int i = 0; i < 4; ++i)
+        {
+            key(input, keys[i], true);
+            second.button(physical[i], true);
+            pump(input);
+            for (int mode = 0; mode < 3; ++mode)
+            {
+                settings.invert12Enabled = mode == 1;
+                settings.invertT1112Enabled = mode == 2;
+                const auto expected = mask(mode == 0 ? normal[i] : mode == 1 ? inverted[i]
+                                                                             : changed[i]);
+                const auto state = input.update(true, settings);
+                check(state[0] == expected && state[1] == expected, "Button modes must affect keyboard and gamepad for both players");
+            }
+            key(input, keys[i], false);
+            second.button(physical[i], false);
+            pump(input);
+        }
         first.button(SDL_GAMEPAD_BUTTON_SOUTH, true);
         second.button(SDL_GAMEPAD_BUTTON_EAST, true);
         pump(input);
@@ -235,6 +288,7 @@ int main()
     try
     {
         Session session;
+        gamepadFastForward();
         keyboard();
         fastForward();
         gamepads();

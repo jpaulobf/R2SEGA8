@@ -17,8 +17,22 @@
 
 namespace
 {
+    SDL_Texture *videoTexture(unsigned width, unsigned height)
+    {
+        for (const auto *list : ImGui::GetDrawData()->CmdLists)
+            for (const auto &command : list->CmdBuffer)
+            {
+                if (command.UserCallback || command.GetTexID() == ImTextureID_Invalid)
+                    continue;
+                auto *texture = reinterpret_cast<SDL_Texture *>(command.GetTexID());
+                float w = 0, h = 0;
+                if (SDL_GetTextureSize(texture, &w, &h) && w == width && h == height)
+                    return texture;
+            }
+        return nullptr;
+    }
     // Confirma que um quadro neutro chegou ao backend como textura com filtro de pixels.
-    bool hasVideoTexture(unsigned width, unsigned height)
+    bool hasVideoTexture(unsigned width, unsigned height, SDL_ScaleMode expectedFilter = SDL_SCALEMODE_NEAREST)
     {
         const auto *data = ImGui::GetDrawData();
         for (const auto *list : data->CmdLists)
@@ -30,7 +44,7 @@ namespace
                 float w = 0, h = 0;
                 SDL_ScaleMode filter;
                 if (SDL_GetTextureSize(texture, &w, &h) && w == width && h == height && SDL_GetTextureScaleMode(texture, &filter) &&
-                    filter == SDL_SCALEMODE_NEAREST)
+                    filter == expectedFilter)
                     return true;
             }
         return false;
@@ -180,6 +194,61 @@ namespace
         window.render();
     }
 
+    void rewindLevelOption(R2SEGA8::Window::Window &window, const char *option)
+    {
+        const auto *main = ImGui::FindWindowByName("R2SEGA8");
+        const auto menuBar = ImHashStr("##MenuBar", 0, main->ID);
+        ImGui::ActivateItemByID(ImHashStr("Hacks", 0, menuBar));
+        window.render();
+        const auto *menu = ImGui::FindWindowByName("###Menu_00");
+        if (!menu || !menu->Active)
+            throw std::runtime_error("Hacks menu did not open");
+        ImGui::ActivateItemByID(ImHashStr("Rewind Level", 0, menu->ID));
+        window.render();
+        const auto *submenu = ImGui::FindWindowByName("###Menu_01");
+        if (!submenu || !submenu->Active)
+            throw std::runtime_error("Rewind Level menu did not open");
+        ImGui::ActivateItemByID(ImHashStr(option, 0, submenu->ID));
+        window.render();
+        window.render();
+    }
+
+    void fullscreenOptions(R2SEGA8::Window::Window &window, SDL_Window *native)
+    {
+        for (const bool stretched : {true, false})
+        {
+            menuOption(window, "Display", stretched ? "Borderless Fullscreen Stretched" : "Borderless Fullscreen");
+            window.processEvents();
+            window.render();
+            window.render();
+            if (!(SDL_GetWindowFlags(native) & SDL_WINDOW_FULLSCREEN))
+                throw std::runtime_error("Display menu must enter fullscreen");
+            const auto *main = ImGui::FindWindowByName("R2SEGA8");
+            if (!main || (main->Flags & ImGuiWindowFlags_MenuBar))
+                throw std::runtime_error("Fullscreen must hide the menu bar");
+            const auto bounds = videoBounds(8, 8);
+            const auto *viewport = ImGui::GetMainViewport();
+            const float scale = std::min(viewport->Size.x / 256.0f, viewport->Size.y / 192.0f);
+            const float width = stretched ? viewport->Size.x : 256 * scale;
+            const float height = stretched ? viewport->Size.y : 192 * scale;
+            if (std::abs(bounds.GetWidth() - width) > 1 || std::abs(bounds.GetHeight() - height) > 1 ||
+                std::abs(bounds.Min.x - (viewport->Pos.x + (viewport->Size.x - width) / 2)) > 1 ||
+                std::abs(bounds.Min.y - (viewport->Pos.y + (viewport->Size.y - height) / 2)) > 1)
+                throw std::runtime_error("Fullscreen video geometry is incorrect");
+            SDL_Event key{};
+            key.type = SDL_EVENT_KEY_DOWN;
+            key.key.windowID = SDL_GetWindowID(native);
+            key.key.key = SDLK_ESCAPE;
+            SDL_PushEvent(&key);
+            window.processEvents();
+            window.render();
+            window.render();
+            if (SDL_GetWindowFlags(native) & SDL_WINDOW_FULLSCREEN)
+                throw std::runtime_error("Escape must leave fullscreen");
+            checkScale(native, 3);
+        }
+    }
+
     // Menus publicam preferências por callback; a aplicação suspende VSync sem apagar a escolha do usuário.
     void executionOptions(R2SEGA8::Window::Window &window, SDL_Window *native, const R2SEGA8::Common::ExecutionSettings &settings,
                           const unsigned &changes)
@@ -220,6 +289,83 @@ namespace
         }
         if (!settings.fastForwardEnabled || settings.vsync != initialVSync || changes != expectedChanges)
             throw std::runtime_error("Execution options must toggle back through the callbacks");
+        if (settings.rewindEnabled || settings.rewindLevel != R2SEGA8::Common::RewindLevel::Normal)
+            throw std::runtime_error("Rewind must start disabled at Normal level");
+        menuOption(window, "Hacks", "Enable Rewind");
+        ++expectedChanges;
+        if (!settings.rewindEnabled || settings.rewindLevel != R2SEGA8::Common::RewindLevel::Normal || changes != expectedChanges)
+            throw std::runtime_error("Rewind must be enabled through the menu");
+        rewindLevelOption(window, "Precise");
+        ++expectedChanges;
+        if (settings.rewindLevel != R2SEGA8::Common::RewindLevel::Precise || changes != expectedChanges)
+            throw std::runtime_error("Rewind level must be selectable through the submenu");
+        rewindLevelOption(window, "Light");
+        ++expectedChanges;
+        if (settings.rewindLevel != R2SEGA8::Common::RewindLevel::Light || changes != expectedChanges)
+            throw std::runtime_error("Light rewind level must be selectable through the submenu");
+        rewindLevelOption(window, "Normal");
+        ++expectedChanges;
+        if (settings.rewindLevel != R2SEGA8::Common::RewindLevel::Normal || changes != expectedChanges)
+            throw std::runtime_error("Normal rewind level must be selectable through the submenu");
+        menuOption(window, "Hacks", "Enable Rewind");
+        ++expectedChanges;
+        if (settings.rewindEnabled || changes != expectedChanges)
+            throw std::runtime_error("Rewind must be disabled through the menu");
+        if (!settings.unlimitedSpritesEnabled)
+            throw std::runtime_error("Unlimited sprites must be enabled by default");
+        menuOption(window, "Hacks", "Enable Unlimited Sprites");
+        ++expectedChanges;
+        if (settings.unlimitedSpritesEnabled || !settings.fastForwardEnabled || changes != expectedChanges)
+            throw std::runtime_error("Unlimited sprites must toggle independently through the callback");
+        menuOption(window, "Hacks", "Enable Unlimited Sprites");
+        ++expectedChanges;
+        if (!settings.unlimitedSpritesEnabled || changes != expectedChanges)
+            throw std::runtime_error("Unlimited sprites must toggle back through the callback");
+        if (!settings.unlimitedSpritesEnabled)
+            throw std::runtime_error("Unlimited sprites must be enabled by default");
+        menuOption(window, "Hacks", "Enable Unlimited Sprites");
+        ++expectedChanges;
+        if (settings.unlimitedSpritesEnabled || !settings.fastForwardEnabled || changes != expectedChanges)
+            throw std::runtime_error("Unlimited sprites must toggle independently through the callback");
+        menuOption(window, "Hacks", "Enable Unlimited Sprites");
+        ++expectedChanges;
+        if (!settings.unlimitedSpritesEnabled || changes != expectedChanges)
+            throw std::runtime_error("Unlimited sprites must toggle back through the callback");
+        if (settings.bilinearFilterEnabled || !hasVideoTexture(8, 8))
+            throw std::runtime_error("Bilinear filtering must be disabled by default");
+        menuOption(window, "Display", "Bilinear Filter");
+        ++expectedChanges;
+        window.render();
+        if (!settings.bilinearFilterEnabled || changes != expectedChanges || !hasVideoTexture(8, 8, SDL_SCALEMODE_LINEAR))
+            throw std::runtime_error("Bilinear filtering must update the video texture");
+        menuOption(window, "Display", "Bilinear Filter");
+        ++expectedChanges;
+        window.render();
+        if (settings.bilinearFilterEnabled || changes != expectedChanges || !hasVideoTexture(8, 8))
+            throw std::runtime_error("Disabling bilinear filtering must restore nearest filtering");
+        auto *texture = videoTexture(8, 8);
+        if (!texture || settings.pixelArtEnabled)
+            throw std::runtime_error("Pixel Art must be disabled by default");
+        menuOption(window, "Display", "Pixel Art");
+        ++expectedChanges;
+        SDL_ScaleMode filter = SDL_SCALEMODE_INVALID;
+        if (!settings.pixelArtEnabled || settings.bilinearFilterEnabled || changes != expectedChanges ||
+            !SDL_GetTextureScaleMode(texture, &filter) || filter != SDL_SCALEMODE_PIXELART)
+            throw std::runtime_error("Pixel Art must render using the SDL texture filter");
+        menuOption(window, "Display", "Bilinear Filter");
+        ++expectedChanges;
+        if (settings.pixelArtEnabled || !settings.bilinearFilterEnabled || changes != expectedChanges ||
+            !hasVideoTexture(8, 8, SDL_SCALEMODE_LINEAR))
+            throw std::runtime_error("Bilinear and Pixel Art must be mutually exclusive");
+        menuOption(window, "Display", "Pixel Art");
+        ++expectedChanges;
+        if (!settings.pixelArtEnabled || settings.bilinearFilterEnabled || changes != expectedChanges ||
+            !SDL_GetTextureScaleMode(texture, &filter) || filter != SDL_SCALEMODE_PIXELART)
+            throw std::runtime_error("Pixel Art must replace bilinear filtering");
+        menuOption(window, "Display", "Pixel Art");
+        ++expectedChanges;
+        if (settings.pixelArtEnabled || changes != expectedChanges || !hasVideoTexture(8, 8))
+            throw std::runtime_error("Disabling Pixel Art must restore nearest filtering");
     }
 
     // Exercita Pause/Break e menus reais contra o mesmo estado de pausa usado pela Engine.
@@ -352,6 +498,7 @@ int main()
             }
             std::filesystem::path loadedPath;
             unsigned resets = 0, unloads = 0;
+            unsigned saves = 0, stateLoads = 0, lastSlot = 0;
             auto loadedType = R2SEGA8::Common::SystemType::Unknown;
             std::vector<std::uint8_t> rom;
             std::array<std::uint8_t, 1024> ram{};
@@ -383,6 +530,12 @@ int main()
             };
             callbacks.hasRom = [&]()
             { return !loadedPath.empty(); };
+            callbacks.canSaveState = [&]()
+            { return !loadedPath.empty(); };
+            callbacks.saveState = [&](unsigned slot)
+            { ++saves; lastSlot = slot; };
+            callbacks.loadState = [&](unsigned slot)
+            { ++stateLoads; lastSlot = slot; };
             callbacks.reset = [&]()
             { ++resets; };
             callbacks.unload = [&]()
@@ -512,6 +665,7 @@ int main()
             if (!hasVideoTexture(8, 8))
                 throw std::runtime_error("Frame callback did not produce a nearest-filtered presentation texture");
             displayOptions(window, nativeWindow);
+            fullscreenOptions(window, nativeWindow);
             if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 59.92 | 01.sg")
                 throw std::runtime_error("FPS must precede the ROM filename in the native title");
             emulatedFPS = 245.75;
@@ -521,11 +675,16 @@ int main()
                 throw std::runtime_error("Updated emulated FPS must replace the title value without duplicating the filename");
             executionOptions(window, nativeWindow, executionSettings, executionChanges);
             pauseOptions(window, nativeWindow, pause, menuPaused, pauseToggles);
+            menuOption(window, "Display", "Bilinear Filter");
             frameWidth = 16;
             frameHeight = 4;
             window.render();
+            if (!hasVideoTexture(16, 4, SDL_SCALEMODE_LINEAR))
+                throw std::runtime_error("Recreated presentation texture must retain bilinear filtering");
+            menuOption(window, "Display", "Bilinear Filter");
+            window.render();
             if (!hasVideoTexture(16, 4))
-                throw std::runtime_error("Frame dimension change did not recreate presentation texture");
+                throw std::runtime_error("Disabling bilinear filtering must update the recreated texture");
             frameEnabled = false;
             window.render();
             if (hasVideoTexture(16, 4))
@@ -578,6 +737,22 @@ int main()
             if (loads != 6 || loadedPath != fixture ||
                 ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
                 throw std::runtime_error("Direct file requests must also load without confirmation");
+            SDL_Event stateFocus{};
+            stateFocus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+            stateFocus.window.windowID = windowID;
+            SDL_PushEvent(&stateFocus);
+            SDL_Event stateKey{};
+            stateKey.type = SDL_EVENT_KEY_DOWN;
+            stateKey.key.windowID = windowID;
+            stateKey.key.key = SDLK_F5;
+            SDL_PushEvent(&stateKey);
+            stateKey.key.key = SDLK_F6;
+            SDL_PushEvent(&stateKey);
+            stateKey.key.repeat = true;
+            SDL_PushEvent(&stateKey);
+            window.processEvents();
+            if (saves != 1 || stateLoads != 1 || lastSlot != 1)
+                throw std::runtime_error("F5/F6 must use the selected slot and ignore repeats");
             // F12 deve acionar somente a aplicação desta janela, sem repetir ao manter a tecla pressionada.
             SDL_Event resetKey{};
             resetKey.type = SDL_EVENT_KEY_DOWN;

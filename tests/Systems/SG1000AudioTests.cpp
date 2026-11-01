@@ -1,8 +1,10 @@
 #include "Core/Systems/SG1000/SG1000.h"
+#include "Common/Hash.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 namespace
@@ -45,6 +47,12 @@ int main()
         using namespace R2SEGA8;
         Fixture fixture;
         Core::SG1000 board{Core::Cartridge(fixture.path)};
+        Core::Board &boardInterface = board;
+        check(board.vdp().state().spriteUnlimited, "Unlimited sprites must be enabled by default");
+        boardInterface.setSpriteUnlimited(false);
+        check(!board.vdp().state().spriteUnlimited, "Board must apply the sprite limit to the VDP");
+        boardInterface.setSpriteUnlimited(true);
+        check(board.vdp().state().spriteUnlimited, "Board must restore unlimited sprites");
         for (unsigned port = 0x40; port <= 0x7f; ++port)
         {
             board.output(static_cast<std::uint16_t>(0x1200 | port), static_cast<std::uint8_t>(0x80 | (port & 15)));
@@ -86,6 +94,63 @@ int main()
               "CPU-only reset must not reset the sound chip");
         Core::SG1000 fresh{Core::Cartridge(fixture.path)};
         check(fresh.psg().state().clocks == 0 && fresh.psg().state().tone[0] == 0, "ROM replacement must create a fresh PSG");
+        // Captura durante uma instrução e verifica a mesma continuação da máquina completa.
+        auto original = std::make_unique<Core::SG1000>(Core::Cartridge(fixture.path));
+        original->runCycles(101);
+        original->writeMemory(0xc123, 0x5a);
+        const auto saved = original->saveState();
+        std::uint64_t baseline = 14695981039346656037ull;
+        for (auto byte : saved)
+            baseline = (baseline ^ byte) * 1099511628211ull;
+        check(saved.size() == 416926 && baseline == 5792043530249614582ull,
+              "Save state format must remain compatible with version 1");
+        auto restored = std::make_unique<Core::SG1000>(Core::Cartridge(fixture.path));
+        restored->loadState(saved);
+        check(restored->saveState() == saved, "State must round-trip without losing CPU, VDP, PSG or RAM");
+        original->runCycles(15000);
+        restored->runCycles(15000);
+        check(original->saveState() == restored->saveState(), "Restored machine must continue deterministically");
+        auto bad = saved;
+        bad.pop_back();
+        bool rejected = false;
+        try
+        {
+            restored->loadState(bad);
+        }
+        catch (const std::exception &)
+        {
+            rejected = true;
+        }
+        check(rejected, "Truncated state must be rejected");
+        for (const std::size_t length : {40u, 10000u, 210000u, static_cast<unsigned>(saved.size() - 9)})
+        {
+            bad.assign(saved.begin(), saved.begin() + length);
+            const auto checksum = Common::fnv1a64(bad);
+            for (unsigned i = 0; i < 8; ++i)
+                bad.push_back(static_cast<std::uint8_t>(checksum >> (i * 8)));
+            rejected = false;
+            try
+            {
+                restored->loadState(bad);
+            }
+            catch (const std::exception &)
+            {
+                rejected = true;
+            }
+            check(rejected, "A truncated payload with a valid checksum must be rejected");
+        }
+        bad = saved;
+        bad[0] ^= 1;
+        rejected = false;
+        try
+        {
+            restored->loadState(bad);
+        }
+        catch (const std::exception &)
+        {
+            rejected = true;
+        }
+        check(rejected, "Wrong system magic must be rejected");
         std::cout << "SG-1000 audio integration tests passed\n";
     }
     catch (const std::exception &error)
