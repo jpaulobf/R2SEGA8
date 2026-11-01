@@ -44,6 +44,15 @@ namespace R2SEGA8::Window
         // Consulta a presença de uma ROM para habilitar as ações de execução.
         std::function<bool()> hasRom;
 
+        // Verifica se pode salvar o estado
+        std::function<bool()> canSaveState;
+
+        // Salva o estado
+        std::function<void(unsigned)> saveState;
+
+        // Lê o estado
+        std::function<void(unsigned)> loadState;
+
         // Solicita a reinicialização completa da máquina com a ROM atual.
         std::function<void()> reset;
 
