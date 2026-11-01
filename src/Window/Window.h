@@ -54,5 +54,6 @@ namespace R2SEGA8::Window
         // Oculta os tipos nativos e centraliza o estado e a liberação dos recursos.
         struct Impl;
         std::unique_ptr<Impl> impl_;
+        static constexpr const char* emuName = "R2SEGA8 v.0.2.0";
     };
 }

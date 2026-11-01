@@ -50,7 +50,9 @@ namespace R2SEGA8::Window
         bool maximized = false;
         bool vsync = false;
         bool reportedMenuPause = false;
-        std::string romName, title;
+        std::string romName;
+        std::string title;
+        
 #ifdef _WIN32
         HWND nativeWindow = nullptr;
         bool resizeHook = false;
@@ -154,7 +156,7 @@ namespace R2SEGA8::Window
             const double measured = callbacks.fps ? callbacks.fps() : 0;
             const double fps = std::isfinite(measured) && measured >= 0 ? measured : 0;
             char prefix[96];
-            std::snprintf(prefix, sizeof(prefix), "R2SEGA8 | FPS : %.2f", fps);
+            std::snprintf(prefix, sizeof(prefix), "%s | FPS : %.2f", emuName, fps);
             auto next = std::string(prefix);
             if (!romName.empty())
                 next += " | " + romName;
@@ -340,7 +342,7 @@ namespace R2SEGA8::Window
         state.sdlReady = true;
         const float scale = std::max(1.0f, SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay()));
         state.window =
-            SDL_CreateWindow("R2SEGA8", static_cast<int>(state.nativeSize.width * state.displayScale), static_cast<int>(state.nativeSize.height * state.displayScale),
+            SDL_CreateWindow(emuName, static_cast<int>(state.nativeSize.width * state.displayScale), static_cast<int>(state.nativeSize.height * state.displayScale),
                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (!state.window)
             throw std::runtime_error(SDL_GetError());

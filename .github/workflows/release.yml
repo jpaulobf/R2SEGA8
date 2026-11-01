@@ -1,0 +1,129 @@
+name: R2SEGA8 Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: # Permite rodar manualmente pela aba Actions
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MinGW (Manual via Chocolatey)
+        shell: pwsh
+        run: |
+          choco install mingw --version 15.2.0 -y
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar MinGW.' }
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Configure CMake
+        # Seleciona o compilador MinGW para o build Windows.
+        run: |
+          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+
+      - name: Build Project
+        run: |
+          cmake --build build --config Release --target R2SEGA8 --parallel
+
+      - name: Prepare Artifacts
+        # Inclui o runtime do MinGW para executar em máquinas sem o compilador.
+        run: |
+          mkdir release_pkg
+          cp bin/R2SEGA8.exe release_pkg/
+          cp LICENSE release_pkg/
+          foreach ($runtime in @('libstdc++-6.dll', 'libgcc_s_seh-1.dll', 'libwinpthread-1.dll')) {
+            $runtimePath = & g++ "-print-file-name=$runtime"
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+              throw "Runtime do MinGW não encontrado: $runtime"
+            }
+            Copy-Item -LiteralPath $runtimePath -Destination release_pkg/
+          }
+          
+      - name: Create Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path release_pkg/* -DestinationPath R2SEGA8_Windows_x64.zip
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: R2SEGA8_Windows_x64
+          path: R2SEGA8_Windows_x64.zip
+          if-no-files-found: error
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: R2SEGA8_Windows_x64.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    # Mantém Ubuntu 22.04 como base de compatibilidade do pacote Linux.
+    runs-on: ubuntu-22.04
+    needs: build-windows
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git pkg-config \
+            libpulse-dev libasound2-dev libpipewire-0.3-dev \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxrandr-dev libxss-dev libxfixes-dev libxtst-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
+            libegl1-mesa-dev libgl1-mesa-dev libgles-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libudev-dev
+
+      - name: Configure CMake
+        # Configura Release sem compilar os testes.
+        run: cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+
+      - name: Build Project
+        run: cmake --build build-linux --config Release --target R2SEGA8 --parallel 2
+
+      - name: Prepare Linux package
+        run: |
+          mkdir release_pkg
+          cp bin/R2SEGA8 LICENSE release_pkg/
+          tar -czf R2SEGA8_Linux_x64.tar.gz -C release_pkg R2SEGA8 LICENSE
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: R2SEGA8_Linux_x64
+          path: R2SEGA8_Linux_x64.tar.gz
+          if-no-files-found: error
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: R2SEGA8_Linux_x64.tar.gz
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
