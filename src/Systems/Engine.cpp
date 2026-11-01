@@ -6,6 +6,8 @@
 #include "FramePacer.h"
 #include "Input.h"
 #include "PauseState.h"
+#include "RewindBuffer.h"
+#include "SaveStateStore.h"
 #include "Window/Window.h"
 #include <algorithm>
 #include <chrono>
@@ -17,6 +19,49 @@
 #include <thread>
 #include <utility>
 
+namespace
+{
+    using namespace R2SEGA8;
+
+    Systems::SaveStateStore saveStateStore()
+    {
+        char *raw = SDL_GetPrefPath("R2SEGA8", "R2SEGA8");
+        if (!raw)
+            throw std::runtime_error(SDL_GetError());
+        const std::unique_ptr<char, decltype(&SDL_free)> path(raw, SDL_free);
+        return Systems::SaveStateStore(std::filesystem::u8path(path.get()) / "saves");
+    }
+
+    std::unique_ptr<Core::Board> configuredBoard(Common::SystemType type, Core::Cartridge cartridge,
+                                                 const Common::AudioSettings &audio,
+                                                 const Common::ExecutionSettings &execution)
+    {
+        auto board = Systems::createBoard(type, std::move(cartridge));
+        board->setAudioSettings(audio);
+        board->setSpriteUnlimited(execution.unlimitedSpritesEnabled);
+        return board;
+    }
+
+    void reportLoadedBoard(const Core::Board &board)
+    {
+        const auto &loaded = board.cartridge();
+        const auto path = loaded.path().u8string();
+        std::printf("System: %s\nFile: %s\nROM: %zu bytes | System RAM: %zu bytes\n", Common::systemName(board.type()),
+                    path.c_str(), loaded.rom().size(), board.ram().size());
+        if (!loaded.ram().empty())
+            std::printf("Cartridge RAM: %zu bytes (The Castle profile)\n", loaded.ram().size());
+        if (loaded.header())
+            std::printf("Sega header: 0x%04X | Region: %X | Size code: %X\n", static_cast<unsigned>(loaded.header()->offset),
+                        static_cast<unsigned>(loaded.header()->region), static_cast<unsigned>(loaded.header()->sizeCode));
+        if (board.hasMemoryMap())
+            std::puts("SG-1000: Z80 and TMS9918 video enabled (Graphics I/II, Text, Multicolor and sprites). Controllers enabled. "
+                      "SN76489AN audio enabled. Cartridge banking is pending.");
+        else
+            std::puts("ROM loaded; system memory mapping is not implemented yet.");
+        std::fflush(stdout);
+    }
+}
+
 int R2SEGA8::Systems::Engine::run()
 {
     try
@@ -25,12 +70,14 @@ int R2SEGA8::Systems::Engine::run()
         using Clock = std::chrono::steady_clock;
         R2SEGA8::Systems::FramePacer pacer;
         R2SEGA8::Systems::FrameCounter frameCounter;
+        R2SEGA8::Systems::RewindBuffer rewind;
         bool running = true;
         bool inputEnabled = false;
         bool resetAudio = false;
         bool resetTiming = false;
         R2SEGA8::Systems::PauseState pause;
         bool emulationPaused = false;
+        bool rewinding = false;
         auto pauseStarted = Clock::now();
         // Uma nova máquina não herda o tempo de pausa usado na medição da máquina anterior.
         const auto resetFPS = [&]()
@@ -51,27 +98,13 @@ int R2SEGA8::Systems::Engine::run()
         R2SEGA8::Window::Callbacks callbacks;
         callbacks.openRom = [&](const std::filesystem::path &file, R2SEGA8::Common::SystemType type)
         {
-            auto next = R2SEGA8::Systems::createBoard(type, R2SEGA8::Core::Cartridge(file));
-            next->setAudioSettings(audioSettings);
+            auto next = configuredBoard(type, R2SEGA8::Core::Cartridge(file), audioSettings, executionSettings);
             board = std::move(next);
+            rewind.clear();
             resetAudio = true;
             resetFPS();
             input.clear();
-            const auto &loaded = board->cartridge();
-            const auto path = loaded.path().u8string();
-            std::printf("System: %s\nFile: %s\nROM: %zu bytes | System RAM: %zu bytes\n", R2SEGA8::Common::systemName(board->type()),
-                        path.c_str(), loaded.rom().size(), board->ram().size());
-            if (!loaded.ram().empty())
-                std::printf("Cartridge RAM: %zu bytes (The Castle profile)\n", loaded.ram().size());
-            if (loaded.header())
-                std::printf("Sega header: 0x%04X | Region: %X | Size code: %X\n", static_cast<unsigned>(loaded.header()->offset),
-                            static_cast<unsigned>(loaded.header()->region), static_cast<unsigned>(loaded.header()->sizeCode));
-            if (board->hasMemoryMap())
-                std::puts("SG-1000: Z80 and TMS9918 video enabled (Graphics I/II, Text, Multicolor and sprites). Controllers enabled. "
-                          "SN76489AN audio enabled. Cartridge banking is pending.");
-            else
-                std::puts("ROM loaded; system memory mapping is not implemented yet.");
-            std::fflush(stdout);
+            reportLoadedBoard(*board);
         };
         callbacks.memory = [&]() -> R2SEGA8::Window::MemoryView
         {
@@ -85,6 +118,49 @@ int R2SEGA8::Systems::Engine::run()
         { running = false; };
         callbacks.hasRom = [&]()
         { return static_cast<bool>(board); };
+        callbacks.canSaveState = [&]()
+        { return board && board->supportsSaveState(); };
+        const auto stateError = [](const std::exception &error)
+        {
+            std::cerr << "Save state: " << error.what() << '\n';
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Save State", error.what(), nullptr);
+        };
+        callbacks.saveState = [&](unsigned slot)
+        {
+            try
+            {
+                if (!board)
+                    throw std::runtime_error("Save state unavailable or invalid slot.");
+                saveStateStore().save(*board, slot);
+                std::cout << "Saved state to slot " << slot << '\n';
+            }
+            catch (const std::exception &error)
+            {
+                stateError(error);
+            }
+        };
+        callbacks.loadState = [&](unsigned slot)
+        {
+            try
+            {
+                if (!board)
+                    throw std::runtime_error("Save state unavailable or invalid slot.");
+                const auto data = saveStateStore().load(*board, slot);
+                auto next = configuredBoard(board->type(), board->cartridge(), audioSettings, executionSettings);
+                next->loadState(data);
+                next->setSpriteUnlimited(executionSettings.unlimitedSpritesEnabled);
+                board = std::move(next);
+                rewind.clear();
+                input.clear();
+                resetAudio = resetTiming = true;
+                resetFPS();
+                std::cout << "Loaded state from slot " << slot << '\n';
+            }
+            catch (const std::exception &error)
+            {
+                stateError(error);
+            }
+        };
         callbacks.reset = [&]()
         {
             if (!board)
@@ -92,9 +168,9 @@ int R2SEGA8::Systems::Engine::run()
             // Reconstrói toda a máquina com a imagem já carregada, sem reler o arquivo no disco.
             auto cartridge = board->cartridge();
             std::fill(cartridge.ram().begin(), cartridge.ram().end(), 0);
-            auto next = R2SEGA8::Systems::createBoard(board->type(), std::move(cartridge));
-            next->setAudioSettings(audioSettings);
+            auto next = configuredBoard(board->type(), std::move(cartridge), audioSettings, executionSettings);
             board = std::move(next);
+            rewind.clear();
             input.clear();
             resetAudio = true;
             resetFPS();
@@ -102,6 +178,7 @@ int R2SEGA8::Systems::Engine::run()
         callbacks.unload = [&]()
         {
             board.reset();
+            rewind.clear();
             input.clear();
             resetAudio = true;
             resetFPS();
@@ -126,7 +203,13 @@ int R2SEGA8::Systems::Engine::run()
         callbacks.fps = [&]()
         { return frameCounter.fps(); };
         callbacks.setExecutionSettings = [&](const R2SEGA8::Common::ExecutionSettings &settings)
-        { executionSettings = settings; };
+        {
+            if (settings.rewindEnabled != executionSettings.rewindEnabled || settings.rewindLevel != executionSettings.rewindLevel)
+                rewind.clear();
+            executionSettings = settings;
+            if (board)
+                board->setSpriteUnlimited(settings.unlimitedSpritesEnabled);
+        };
         callbacks.frame = [&]() -> R2SEGA8::Window::FrameView
         {
             if (!board)
@@ -178,7 +261,18 @@ int R2SEGA8::Systems::Engine::run()
         {
             synchronizePause();
             const bool minimized = window.isMinimized();
-            const bool fast = executionSettings.fastForwardEnabled && inputEnabled && !emulationPaused && !minimized &&
+            const bool nextRewinding = executionSettings.rewindEnabled && inputEnabled && !emulationPaused && !minimized &&
+                                       timedBoard() && board->supportsSaveState() && input.isRewindPressed();
+            if (nextRewinding != rewinding)
+            {
+                rewinding = nextRewinding;
+                if (rewinding)
+                    rewind.beginRewind();
+                else
+                    rewind.endRewind();
+                resetAudio = resetTiming = true;
+            }
+            const bool fast = !rewinding && executionSettings.fastForwardEnabled && inputEnabled && !emulationPaused && !minimized &&
                               input.isFastForwardPressed() && timedBoard();
             auto nextMode = fast ? LoopMode::FastForward : executionSettings.vsync && !minimized ? LoopMode::VSync
                                                                                                  : LoopMode::Hardware;
@@ -229,8 +323,8 @@ int R2SEGA8::Systems::Engine::run()
                 break;
             synchronizeLoop();
             resetRuntime();
-            const auto buttons = input.update(inputEnabled && !emulationPaused);
-            if (board && !emulationPaused)
+            const auto buttons = input.update(inputEnabled && !emulationPaused, executionSettings);
+            if (board && !emulationPaused && !rewinding)
                 board->setInput(buttons);
             if (loopMode == LoopMode::Hardware)
                 pacer.advance();
@@ -253,16 +347,34 @@ int R2SEGA8::Systems::Engine::run()
                         resetRuntime();
                         if (emulationPaused || loopMode != LoopMode::FastForward || !timedBoard())
                             break;
-                        board->setInput(input.update(inputEnabled));
+                        board->setInput(input.update(inputEnabled, executionSettings));
                     }
-                    board->runCycles(board->cyclesPerFrame());
-                    frameCounter.record(Clock::now());
-                    board->takeAudio(audioSamples);
-                    // O PSG continua avançando no fast-forward; apenas a saída PCM é descartada.
-                    if (loopMode != LoopMode::FastForward && !audio.submit(audioSamples.data(), audioSamples.size()))
+                    if (rewinding)
                     {
-                        std::cerr << "Audio: Playback disabled: " << SDL_GetError() << '\n';
-                        audio.shutdown();
+                        if (const auto *state = rewind.step())
+                        {
+                            board->loadState(*state);
+                            board->setSpriteUnlimited(executionSettings.unlimitedSpritesEnabled);
+                        }
+                    }
+                    else
+                    {
+                        if (executionSettings.rewindEnabled && board->supportsSaveState())
+                        {
+                            if (!rewind.configured())
+                                rewind.configure(board->clockFrequency(), board->cyclesPerFrame(), executionSettings.rewindLevel);
+                            if (rewind.captureDue())
+                                rewind.push(board->saveState());
+                        }
+                        board->runCycles(board->cyclesPerFrame());
+                        frameCounter.record(Clock::now());
+                        board->takeAudio(audioSamples);
+                        // O PSG continua avançando no fast-forward; apenas a saída PCM é descartada.
+                        if (loopMode != LoopMode::FastForward && !audio.submit(audioSamples.data(), audioSamples.size()))
+                        {
+                            std::cerr << "Audio: Playback disabled: " << SDL_GetError() << '\n';
+                            audio.shutdown();
+                        }
                     }
                     if (loopMode == LoopMode::FastForward)
                         continue;
