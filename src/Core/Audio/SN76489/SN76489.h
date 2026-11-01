@@ -27,6 +27,23 @@ namespace R2SEGA8::Core
             std::uint64_t clocks = 0;
         };
 
+        // Estado do chip e da integração PCM; a fila de saída e as preferências do usuário não pertencem à máquina.
+        struct Snapshot
+        {
+            // A ordem integra o formato de save state da placa e deve permanecer estável.
+            template <class Archive>
+            void stateArchive(Archive &ar)
+            {
+                ar(state.tone, state.attenuation, state.counter, state.output, state.noiseShift, state.noise, state.latch,
+                   state.divider, state.busyClocks, state.clocks, clockFrequency, sampleRate, samplePhase,
+                   sampleArea, previousInput, previousOutput);
+            }
+
+            State state;
+            unsigned clockFrequency = 0, sampleRate = 0, samplePhase = 0;
+            double sampleArea = 0, previousInput = 0, previousOutput = 0;
+        };
+
         // Configura os clocks de entrada e a taxa PCM; exige 0 < sampleRate <= clockFrequency.
         explicit SN76489(unsigned clockFrequency = DefaultClock, unsigned sampleRate = DefaultSampleRate);
 
@@ -44,6 +61,10 @@ namespace R2SEGA8::Core
 
         // Consulta registradores e contadores sem alterar o chip; não é um formato de save state.
         const State &state() const { return state_; }
+
+        Snapshot snapshot() const;
+        // Valida antes de alterar o chip; descarta PCM já gerado e mantém as preferências atuais.
+        void restore(const Snapshot &snapshot);
 
         // Retorna o nível lógico de READY para ligação ao barramento da máquina.
         bool ready() const { return state_.busyClocks == 0; }

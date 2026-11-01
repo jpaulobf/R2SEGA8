@@ -26,6 +26,33 @@ namespace R2SEGA8::Core
         updateLevel();
     }
 
+    SN76489::Snapshot SN76489::snapshot() const
+    {
+        return {state_, clockFrequency_, sampleRate_, samplePhase_, sampleArea_, previousInput_, previousOutput_};
+    }
+
+    void SN76489::restore(const Snapshot &saved)
+    {
+        const auto &s = saved.state;
+        if (saved.clockFrequency != clockFrequency_ || saved.sampleRate != sampleRate_ || saved.samplePhase >= clockFrequency_ ||
+            !std::isfinite(saved.sampleArea) || !std::isfinite(saved.previousInput) || !std::isfinite(saved.previousOutput) ||
+            s.noise > 7 || s.latch > 7 || s.divider >= 16 || s.busyClocks > 32 || s.noiseShift > 0x1ffff ||
+            std::any_of(s.tone.begin(), s.tone.end(), [](auto v)
+                        { return v > 1023; }) ||
+            std::any_of(s.attenuation.begin(), s.attenuation.end(), [](auto v)
+                        { return v > 15; }) ||
+            std::any_of(s.counter.begin(), s.counter.end(), [](auto v)
+                        { return v > 2048; }))
+            throw std::invalid_argument("Invalid SN76489 snapshot.");
+        state_ = s;
+        samplePhase_ = saved.samplePhase;
+        sampleArea_ = saved.sampleArea;
+        previousInput_ = saved.previousInput;
+        previousOutput_ = saved.previousOutput;
+        samples_.clear();
+        updateLevel();
+    }
+
     void SN76489::write(std::uint8_t value)
     {
         const bool latch = (value & 0x80) != 0;
