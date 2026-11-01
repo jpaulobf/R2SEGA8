@@ -6,6 +6,7 @@
 #include "Core/Cartridge/Cartridge.h"
 #include "Core/VDP/VideoFrame.h"
 #include <vector>
+#include <stdexcept>
 
 namespace R2SEGA8::Core
 {
@@ -47,6 +48,9 @@ namespace R2SEGA8::Core
         // Recebe ajustes de apresentação; placas sem mixer implementado ignoram a atualização.
         virtual void setAudioSettings(const Common::AudioSettings &) {}
 
+        // Define o limite de sprites nos sistemas que oferecem esta opção.
+        virtual void setSpriteUnlimited(bool) {}
+
         // Recebe intenções lógicas do jogador; placas sem controles implementados ignoram a atualização.
         virtual void setButtons(unsigned, Common::ButtonMask) {}
 
@@ -74,6 +78,11 @@ namespace R2SEGA8::Core
 
         // Indica se o perfil atual implementa acessos ao espaço de memória da CPU.
         virtual bool hasMemoryMap() const { return false; }
+
+        // Cada sistema define seu próprio formato e número mágico.
+        virtual bool supportsSaveState() const { return false; }
+        virtual std::vector<std::uint8_t> saveState() const { throw std::runtime_error("Save states are unavailable for this system."); }
+        virtual void loadState(const std::vector<std::uint8_t> &) { throw std::runtime_error("Save states are unavailable for this system."); }
 
         // Lê um byte pelo endereço da CPU. A implementação base lança uma exceção
         // porque ainda não possui um mapa de memória.

@@ -2,6 +2,7 @@
 #include "../VideoFrame.h"
 #include <array>
 #include <cstdint>
+#include <initializer_list>
 
 namespace R2SEGA8::Core
 {
@@ -43,6 +44,23 @@ namespace R2SEGA8::Core
         };
         struct State
         {
+            // A ordem integra o formato de save state da placa e deve permanecer estável.
+            template <class Archive>
+            void stateArchive(Archive &ar)
+            {
+                ar(vram, registers);
+                for (auto &b : background)
+                    ar(b.name, b.pattern, b.colors, b.column, b.mode, b.line, b.named, b.ready);
+                ar(outputMode, outputStart, outputWidth, outputLine, outputValid, cpuAccessPending, cpuAccessWrite,
+                   cpuAccessData, cpuAccessDelay, refreshRow, access, accessAddress, accessData, images);
+                for (auto *bank : {&evaluatedSprites, &nextSprites, &sprites})
+                    for (auto &v : *bank)
+                        ar(v.index, v.y, v.x, v.name, v.attributes, v.left, v.right, v.row, v.size, v.scale, v.visible);
+                ar(selectedSprites, nextSpriteCount, spriteCount, extraFetchIndex, extraFetchPhase, spriteTargetLine,
+                   spriteEvaluationStopped, spriteUnlimited, evaluationSpriteUnlimited, address, dot, line, readBuffer,
+                   controlLatch, status, masterPhase, drawingImage, pattern, colors, secondControlByte, masterTicks, completedFrames);
+            }
+
             std::array<std::uint8_t, 0x4000> vram{};
             std::array<std::uint8_t, 8> registers{};
             std::array<Background, 2> background{};
