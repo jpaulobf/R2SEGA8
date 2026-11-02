@@ -129,8 +129,16 @@ namespace R2SEGA8::Core
         // Configura a próxima seleção: false mantém quatro sprites por linha; true permite até 32.
         void setSpriteUnlimited(bool enabled) { state_.spriteUnlimited = enabled; }
 
+        // Preferências de apresentação não integram o estado do hardware nem save states.
+        void setRenderLayers(bool sprites, bool tiles)
+        {
+            renderSprites_ = sprites;
+            renderTiles_ = tiles;
+        }
+
     private:
         State state_;
+        bool renderSprites_ = true, renderTiles_ = true;
         // Incrementa e aplica a volta de 3FFF para 0000 ao endereço de acesso da CPU.
         void incrementAddress();
 

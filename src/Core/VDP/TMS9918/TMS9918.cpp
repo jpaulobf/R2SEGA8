@@ -462,13 +462,13 @@ namespace R2SEGA8::Core
     {
         const auto backdrop = state_.registers[7] & 15;
         const auto background = backgroundColor(); // Os latches continuam avançando mesmo com a saída apagada.
-        unsigned color = (state_.registers[1] & 0x40) ? background : backdrop;
+        unsigned color = (state_.registers[1] & 0x40) && renderTiles_ ? background : backdrop;
         if (!color)
             color = backdrop;
         if (spritesEnabled())
         {
             const auto sprite = spriteColor(state_.sprites, state_.spriteCount, state_.dot);
-            if (sprite)
+            if (sprite && renderSprites_)
                 color = sprite;
         }
         auto &image = state_.images[state_.drawingImage];
