@@ -52,7 +52,7 @@ namespace R2SEGA8::Window
         bool reportedMenuPause = false;
         std::string romName;
         std::string title;
-        
+
 #ifdef _WIN32
         HWND nativeWindow = nullptr;
         bool resizeHook = false;
@@ -613,6 +613,11 @@ namespace R2SEGA8::Window
                         state.pendingFullscreen = Impl::Fullscreen::Stretched;
                     if (ImGui::MenuItem("Borderless Fullscreen"))
                         state.pendingFullscreen = Impl::Fullscreen::Aspect;
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Render sprites", nullptr, &settings.renderSprites, configurable))
+                        state.callbacks.setExecutionSettings(settings);
+                    if (ImGui::MenuItem("Render tiles", nullptr, &settings.renderTiles, configurable))
+                        state.callbacks.setExecutionSettings(settings);
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("Audio", state.callbacks.audioSettings && state.callbacks.setAudioSettings))
