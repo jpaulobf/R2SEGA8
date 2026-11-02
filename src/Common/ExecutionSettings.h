@@ -21,6 +21,8 @@ namespace R2SEGA8::Common
         bool rewindEnabled = false;
         RewindLevel rewindLevel = RewindLevel::Normal;
         bool unlimitedSpritesEnabled = true;
+        bool renderSprites = true;
+        bool renderTiles = true;
         bool invert12Enabled = false;
         bool invertT1112Enabled = false;
     };
