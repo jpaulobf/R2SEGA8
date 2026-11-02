@@ -5,9 +5,17 @@ Cartridge ROM e System RAM não são consultados nem desenhados nessa tela.
 O callback `memory`, os tipos neutros de consulta e o desenho hexadecimal
 foram preservados em `Window::MemoryInspector` para futuras janelas de Debug.
 
+## Perfil do console
+
+`Display > Console Profile` seleciona Auto, NTSC ou PAL para o Master System.
+Auto usa PAL para nomes de ROM iniciados por `(Europe` ou `(Australia` na
+indicação regional e NTSC nos demais casos. Trocar o perfil com um jogo de
+Master System carregado reinicia a máquina. O menu fica desabilitado com
+SG-1000, SC-3000 ou Game Gear carregado; sem ROM, permite escolher a preferência.
+
 ## VSync e avanço rápido
 
-`Display > VSync` é a primeira opção, separada das escalas por um divisor.
+`Display > VSync` fica abaixo da seleção de perfil.
 Começa ativada. `Hacks > Enable Fast-Forward` começa ativada e permite
 acelerar enquanto TAB estiver pressionado. As preferências pertencem à sessão
 da Engine e são consultadas/alteradas pela Window somente por callbacks.
