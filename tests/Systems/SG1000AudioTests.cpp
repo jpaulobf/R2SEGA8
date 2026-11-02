@@ -47,6 +47,9 @@ int main()
         using namespace R2SEGA8;
         Fixture fixture;
         Core::SG1000 board{Core::Cartridge(fixture.path)};
+        check(std::all_of(board.psg().state().attenuation.begin(), board.psg().state().attenuation.end(),
+                          [](auto value) { return value == 15; }),
+              "SG-1000 PSG must start with muted channels");
         Core::Board &boardInterface = board;
         check(board.vdp().state().spriteUnlimited, "Unlimited sprites must be enabled by default");
         boardInterface.setSpriteUnlimited(false);
@@ -102,7 +105,7 @@ int main()
         std::uint64_t baseline = 14695981039346656037ull;
         for (auto byte : saved)
             baseline = (baseline ^ byte) * 1099511628211ull;
-        check(saved.size() == 416926 && baseline == 5792043530249614582ull,
+        check(saved.size() == 416926 && baseline == 518481195342551973ull,
               "Save state format must remain compatible with version 1");
         auto restored = std::make_unique<Core::SG1000>(Core::Cartridge(fixture.path));
         restored->loadState(saved);

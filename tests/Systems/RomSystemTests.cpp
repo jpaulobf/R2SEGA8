@@ -167,11 +167,60 @@ int main()
         const auto smsProgram = fixtures.write("cpu.sms", {0x31, 0x00, 0xe0, 0x3e, 0x42, 0x32, 0x05, 0xc0, 0x76});
         auto sms = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(smsProgram));
         check(sms->hasMemoryMap() && sms->cyclesPerFrame() == 59736 && sms->clockFrequency() == 3579545, "SMS mapping or scheduling");
+        const auto europeanPath = fixtures.write("fixture (Europe).sms", std::vector<std::uint8_t>(0x8000));
+        auto autoPal = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(europeanPath));
+        auto forcedNtsc = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(europeanPath), Common::ConsoleProfile::NTSC);
+        auto forcedPal = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(smsProgram), Common::ConsoleProfile::PAL);
+        check(autoPal->cyclesPerFrame() == 71364 && autoPal->clockFrequency() == 3546893, "Auto must select PAL for Europe");
+        check(forcedNtsc->cyclesPerFrame() == 59736 && forcedNtsc->clockFrequency() == 3579545, "NTSC override");
+        check(forcedPal->cyclesPerFrame() == 71364 && forcedPal->clockFrequency() == 3546893, "PAL override");
+        check(autoPal->consoleProfile() == Common::ConsoleProfile::PAL &&
+                  forcedNtsc->consoleProfile() == Common::ConsoleProfile::NTSC &&
+                  forcedPal->consoleProfile() == Common::ConsoleProfile::PAL && !board->consoleProfile(),
+              "Only supported boards expose their effective console profile");
+        autoPal->runCycles(autoPal->cyclesPerFrame());
+        check(autoPal->videoFrame().number == 1, "PAL frame executes at the PAL rate");
         check(sms->ram().size() == 8192 && sms->readMemory(0) == 0x31 && sms->readMemory(9) == 0xff, "SMS initial ROM and RAM");
         sms->writeMemory(0, 0xff);
         check(sms->readMemory(0) == 0x31, "SMS ROM must be read-only");
         check(sms->runCycles(34) == 34 && sms->cpu().state().halted && sms->readMemory(0xe005) == 0x42,
               "SMS Z80 program writes mirrored RAM");
+        for (const auto type : {SystemType::SG1000, SystemType::MasterSystem})
+        {
+            const auto &path = type == SystemType::SG1000 ? cpuProgram : smsProgram;
+            auto normal = Systems::createBoard(type, Core::Cartridge(path));
+            auto accelerated = Systems::createBoard(type, Core::Cartridge(path));
+            accelerated->setCPUOverclock(true, 2.0f);
+            normal->runCycles(normal->cyclesPerFrame());
+            accelerated->runCycles(accelerated->cyclesPerFrame());
+            check(accelerated->cpu().state().cycles == normal->cpu().state().cycles * 2, "CPU overclock ratio");
+            check(normal->videoFrame().number == 1 && accelerated->videoFrame().number == 1, "Overclock must preserve video cadence");
+            std::vector<float> normalAudio, acceleratedAudio;
+            normal->takeAudio(normalAudio);
+            accelerated->takeAudio(acceleratedAudio);
+            check(!normalAudio.empty() && normalAudio.size() == acceleratedAudio.size(), "Overclock must preserve audio cadence");
+            accelerated = Systems::createBoard(type, Core::Cartridge(path));
+            accelerated->setCPUOverclock(true, 1.37f);
+            const auto before = accelerated->cpu().state().cycles;
+            for (int i = 0; i < 100; ++i)
+                accelerated->runCycles(1);
+            check(accelerated->cpu().state().cycles - before == 137, "Fractional CPU overclock over split budgets");
+            check(accelerated->runCycles(0) == 0, "Zero overclock budget");
+            if (type == SystemType::SG1000)
+            {
+                const auto saved = accelerated->saveState();
+                auto restored = Systems::createBoard(type, Core::Cartridge(path));
+                restored->setCPUOverclock(true, 1.37f);
+                restored->loadState(saved);
+                accelerated->runCycles(1234);
+                restored->runCycles(1234);
+                check(accelerated->saveState() == restored->saveState(), "Overclock phase must survive state restore");
+            }
+            accelerated->setCPUOverclock(false, 2.0f);
+            const auto disabled = accelerated->cpu().state().cycles;
+            accelerated->runCycles(100);
+            check(accelerated->cpu().state().cycles == disabled + 100, "Disabled overclock uses normal CPU speed");
+        }
         // Como Shadow Dancer, este programa chama uma rotina antes de definir SP.
         // A pilha inicial em FFFF mudaria o banco 0 para 3 ao empilhar o retorno.
         std::vector<std::uint8_t> earlyCallROM(4 * 0x4000, 0);
@@ -276,6 +325,7 @@ int main()
             check(other->ram().size() == (type == SystemType::SC3000 ? 1024u : 8192u), "System RAM allocation");
             check(!other->hasMemoryMap(), "Unimplemented mapping advertised as available");
             check(!other->clockFrequency(), "Unimplemented system must not be scheduled");
+            check(!other->consoleProfile(), "Unimplemented systems must not offer a console profile");
             rejects([&]
                     { other->runCycles(4); }, "CPU executed without an implemented memory map");
             rejects([&]

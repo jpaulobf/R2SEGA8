@@ -220,6 +220,35 @@ namespace
 
     void fullscreenOptions(R2SEGA8::Window::Window &window, SDL_Window *native)
     {
+        SDL_Event shortcut{};
+        shortcut.type = SDL_EVENT_KEY_DOWN;
+        shortcut.key.windowID = SDL_GetWindowID(native);
+        shortcut.key.key = SDLK_F;
+        shortcut.key.mod = SDL_KMOD_CTRL;
+        SDL_PushEvent(&shortcut);
+        window.processEvents();
+        window.render();
+        window.render();
+        if (!(SDL_GetWindowFlags(native) & SDL_WINDOW_FULLSCREEN))
+            throw std::runtime_error("Ctrl+F must enter fullscreen");
+        const auto bounds = videoBounds(8, 8);
+        const auto *viewport = ImGui::GetMainViewport();
+        const float scale = std::min(viewport->Size.x / 256.0f, viewport->Size.y / 192.0f);
+        if (std::abs(bounds.GetWidth() - 256 * scale) > 1 || std::abs(bounds.GetHeight() - 192 * scale) > 1)
+            throw std::runtime_error("Ctrl+F must preserve the video aspect ratio");
+        shortcut.key.repeat = true;
+        SDL_PushEvent(&shortcut);
+        window.processEvents();
+        if (!(SDL_GetWindowFlags(native) & SDL_WINDOW_FULLSCREEN))
+            throw std::runtime_error("Repeated Ctrl+F must not toggle fullscreen");
+        shortcut.key.repeat = false;
+        SDL_PushEvent(&shortcut);
+        window.processEvents();
+        window.render();
+        window.render();
+        if (SDL_GetWindowFlags(native) & SDL_WINDOW_FULLSCREEN)
+            throw std::runtime_error("Ctrl+F must leave fullscreen");
+        checkScale(native, 3);
         for (const bool stretched : {true, false})
         {
             menuOption(window, "Display", stretched ? "Borderless Fullscreen Stretched" : "Borderless Fullscreen");
@@ -562,6 +591,8 @@ int main()
                 executionSettings = settings;
                 ++executionChanges;
             };
+            callbacks.consoleProfileAvailable = [&]()
+            { return loadedPath.empty() || loadedType == R2SEGA8::Common::SystemType::MasterSystem; };
             callbacks.hasRom = [&]()
             { return !loadedPath.empty(); };
             callbacks.canSaveState = [&]()
@@ -711,6 +742,36 @@ int main()
             if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 245.75 | 01.sg")
                 throw std::runtime_error("Updated emulated FPS must replace the title value without duplicating the filename");
             executionOptions(window, nativeWindow, executionSettings, executionChanges);
+            for (const auto system : {R2SEGA8::Common::SystemType::SG1000, R2SEGA8::Common::SystemType::SC3000,
+                                      R2SEGA8::Common::SystemType::GameGear})
+            {
+                loadedType = system;
+                const auto *main = ImGui::FindWindowByName("R2SEGA8");
+                const auto menuBar = ImHashStr("##MenuBar", 0, main->ID);
+                ImGui::ActivateItemByID(ImHashStr("Display", 0, menuBar));
+                window.render();
+                const auto *menu = ImGui::FindWindowByName("###Menu_00");
+                if (!menu || !menu->Active)
+                    throw std::runtime_error("Display menu did not open");
+                ImGui::ActivateItemByID(ImHashStr("Console Profile", 0, menu->ID));
+                window.render();
+                const auto *submenu = ImGui::FindWindowByName("###Menu_01");
+                if (submenu && submenu->Active)
+                    throw std::runtime_error("Console profile must be disabled for unsupported systems");
+                ImGui::ClosePopupsOverWindow(nullptr, false);
+                window.render();
+            }
+            loadedType = R2SEGA8::Common::SystemType::MasterSystem;
+            submenuOption(window, "Display", "Console Profile", "PAL");
+            if (executionSettings.consoleProfile != R2SEGA8::Common::ConsoleProfile::PAL)
+                throw std::runtime_error("Console profile menu must select PAL");
+            submenuOption(window, "Display", "Console Profile", "NTSC");
+            if (executionSettings.consoleProfile != R2SEGA8::Common::ConsoleProfile::NTSC)
+                throw std::runtime_error("Console profile menu must select NTSC");
+            submenuOption(window, "Display", "Console Profile", "Auto");
+            if (executionSettings.consoleProfile != R2SEGA8::Common::ConsoleProfile::Auto)
+                throw std::runtime_error("Console profile menu must select Auto");
+            loadedType = R2SEGA8::Common::SystemType::SG1000;
             pauseOptions(window, nativeWindow, pause, menuPaused, pauseToggles);
             menuOption(window, "Display", "Bilinear Filter");
             frameWidth = 16;
@@ -722,6 +783,42 @@ int main()
             window.render();
             if (!hasVideoTexture(16, 4))
                 throw std::runtime_error("Disabling bilinear filtering must update the recreated texture");
+            menuOption(window, "Hacks", "Enable CPU Overclock");
+            window.render();
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 245.75 | 01.sg | CPU OVERCLOCK enabled... Games can crash!!")
+                throw std::runtime_error("Overclock warning must appear in the window title");
+            menuOption(window, "Hacks", "Enable CPU Overclock");
+            window.render();
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 245.75 | 01.sg")
+                throw std::runtime_error("Overclock warning must disappear when disabled");
+            menuOption(window, "Display", "Crop 8px from Left");
+            window.render();
+            window.render();
+            int croppedWidth = 0, croppedHeight = 0;
+            SDL_GetWindowSizeInPixels(nativeWindow, &croppedWidth, &croppedHeight);
+            if (!executionSettings.cropLeftEnabled || croppedWidth != 248 * 3 || !hasVideoTexture(8, 4))
+                throw std::runtime_error("Crop must update the texture and window width");
+            menuOption(window, "Display", "Borderless Fullscreen");
+            window.render();
+            window.render();
+            const auto croppedBounds = videoBounds(8, 4);
+            const auto *viewport = ImGui::GetMainViewport();
+            const float croppedScale = std::min(viewport->Size.x / 248.0f, viewport->Size.y / 192.0f);
+            if (std::abs(croppedBounds.GetWidth() - 248 * croppedScale) > 1 ||
+                std::abs(croppedBounds.Min.x - (viewport->Pos.x + (viewport->Size.x - croppedBounds.GetWidth()) / 2)) > 1 ||
+                std::abs(croppedBounds.Min.y - (viewport->Pos.y + (viewport->Size.y - croppedBounds.GetHeight()) / 2)) > 1)
+                throw std::runtime_error("Cropped fullscreen video must preserve its aspect ratio and be centered");
+            SDL_Event leaveFullscreen{};
+            leaveFullscreen.type = SDL_EVENT_KEY_DOWN;
+            leaveFullscreen.key.windowID = windowID;
+            leaveFullscreen.key.key = SDLK_ESCAPE;
+            SDL_PushEvent(&leaveFullscreen);
+            window.processEvents();
+            window.render();
+            menuOption(window, "Display", "Crop 8px from Left");
+            window.render();
+            if (executionSettings.cropLeftEnabled || !hasVideoTexture(16, 4))
+                throw std::runtime_error("Disabling crop must restore the full texture");
             frameEnabled = false;
             window.render();
             if (hasVideoTexture(16, 4))

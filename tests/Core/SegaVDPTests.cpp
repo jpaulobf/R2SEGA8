@@ -630,6 +630,16 @@ int main()
         lineInterrupts();
         horizontalTiming();
         verticalCounter();
+        {
+            auto pal = std::make_unique<SegaVDP>(true);
+            const unsigned lineTicks = SegaVDP::DotsPerLine * 2;
+            pal->runMasterTicks(242 * lineTicks);
+            check(pal->verticalCounter() == 0xf2, "PAL counter before wrap");
+            pal->runMasterTicks(lineTicks);
+            check(pal->verticalCounter() == 0xba, "PAL counter wrap at F2");
+            pal->runMasterTicks(70 * lineTicks);
+            check(pal->state().line == 0 && pal->verticalCounter() == 0, "PAL frame has 313 lines");
+        }
         std::cout << "Sega VDP ports and memory passed.\n";
         return 0;
     }
