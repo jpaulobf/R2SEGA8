@@ -2,11 +2,13 @@
 
 #include "Common/Buttons.h"
 #include "Common/AudioSettings.h"
+#include "Common/ConsoleProfile.h"
 #include "Core/CPU/Z80/Z80.h"
 #include "Core/Cartridge/Cartridge.h"
 #include "Core/VDP/VideoFrame.h"
 #include <vector>
 #include <stdexcept>
+#include <optional>
 
 namespace R2SEGA8::Core
 {
@@ -32,12 +34,16 @@ namespace R2SEGA8::Core
 
         // Executa exatamente o orçamento de T-states; exige mapa de memória implementado.
         std::uint64_t runCycles(std::uint64_t budget);
+        void setCPUOverclock(bool enabled, float multiplier);
 
         // Retorna zero enquanto a máquina não oferecer um perfil de execução.
         virtual unsigned clockFrequency() const { return 0; }
 
         // Retorna a quantidade de T-states por quadro completo; zero indica ausência de temporização de vídeo.
         virtual unsigned cyclesPerFrame() const { return 0; }
+
+        // Perfil efetivo, quando a placa permite selecionar NTSC ou PAL.
+        virtual std::optional<Common::ConsoleProfile> consoleProfile() const { return std::nullopt; }
 
         // Consulta o último quadro completo; placas sem vídeo implementado retornam uma consulta vazia.
         virtual VideoFrame videoFrame() const { return {}; }
@@ -96,6 +102,7 @@ namespace R2SEGA8::Core
         void writeMemory(std::uint16_t address, std::uint8_t value) override;
 
     protected:
+        bool peripheralClockDue() const;
         // Recebe o cartucho e aloca ramSize bytes de RAM interna, inicialmente zerados.
         Board(Common::SystemType type, Cartridge cartridge, std::size_t ramSize);
         Cartridge cartridge_;
@@ -104,5 +111,6 @@ namespace R2SEGA8::Core
     private:
         Common::SystemType type_;
         Z80 cpu_;
+        unsigned cpuMultiplierPercent_ = 100;
     };
 }
