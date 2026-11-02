@@ -6,11 +6,15 @@
 
 namespace R2SEGA8::Core
 {
-    // SN76489AN discreto do SG-1000: três tons, ruído e atenuação de 2 dB por passo.
-    // Não representa o PSG integrado dos consoles Sega posteriores.
+    // PSG TI do SG-1000 ou variante integrada Sega: três tons e um canal de ruído.
     class SN76489
     {
     public:
+        enum class Variant
+        {
+            TI,
+            Sega
+        };
         static constexpr unsigned DefaultClock = 3579545;
         static constexpr unsigned DefaultSampleRate = 48000;
 
@@ -45,7 +49,7 @@ namespace R2SEGA8::Core
         };
 
         // Configura os clocks de entrada e a taxa PCM; exige 0 < sampleRate <= clockFrequency.
-        explicit SN76489(unsigned clockFrequency = DefaultClock, unsigned sampleRate = DefaultSampleRate);
+        explicit SN76489(unsigned clockFrequency = DefaultClock, unsigned sampleRate = DefaultSampleRate, Variant variant = Variant::TI);
 
         // Reinicia chip e amostrador; volumes máximos seguem o perfil AN, sem garantir estado elétrico de partida.
         void reset();
@@ -95,6 +99,7 @@ namespace R2SEGA8::Core
         void sampleClock();
 
         State state_;
+        Variant variant_;
         Common::AudioSettings audioSettings_;
         unsigned clockFrequency_, sampleRate_, samplePhase_ = 0;
         float level_ = 0, masterGain_ = 1;

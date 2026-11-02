@@ -5,7 +5,7 @@
 
 namespace R2SEGA8::Core
 {
-    SN76489::SN76489(unsigned clockFrequency, unsigned sampleRate) : clockFrequency_(clockFrequency), sampleRate_(sampleRate)
+    SN76489::SN76489(unsigned clockFrequency, unsigned sampleRate, Variant variant) : variant_(variant), clockFrequency_(clockFrequency), sampleRate_(sampleRate)
     {
         if (!sampleRate || sampleRate > clockFrequency)
             throw std::invalid_argument("Invalid PSG clock/sample rate.");
@@ -20,6 +20,8 @@ namespace R2SEGA8::Core
     void SN76489::reset()
     {
         state_ = {};
+        if (variant_ == Variant::Sega)
+            state_.noiseShift = 0x8000;
         samplePhase_ = 0;
         sampleArea_ = previousInput_ = previousOutput_ = 0;
         samples_.clear();
@@ -36,7 +38,7 @@ namespace R2SEGA8::Core
         const auto &s = saved.state;
         if (saved.clockFrequency != clockFrequency_ || saved.sampleRate != sampleRate_ || saved.samplePhase >= clockFrequency_ ||
             !std::isfinite(saved.sampleArea) || !std::isfinite(saved.previousInput) || !std::isfinite(saved.previousOutput) ||
-            s.noise > 7 || s.latch > 7 || s.divider >= 16 || s.busyClocks > 32 || s.noiseShift > 0x1ffff ||
+            s.noise > 7 || s.latch > 7 || s.divider >= 16 || s.busyClocks > 32 || s.noiseShift > (variant_ == Variant::Sega ? 0xffffu : 0x1ffffu) ||
             std::any_of(s.tone.begin(), s.tone.end(), [](auto v)
                         { return v > 1023; }) ||
             std::any_of(s.attenuation.begin(), s.attenuation.end(), [](auto v)
@@ -69,7 +71,7 @@ namespace R2SEGA8::Core
         else
         {
             state_.noise = value & 7;
-            state_.noiseShift = 0x10000;
+            state_.noiseShift = variant_ == Variant::Sega ? 0x8000 : 0x10000;
             // A escrita reinicia o LFSR, mas não o contador nem o bit já apresentado na saída.
         }
         state_.busyClocks = 32;
@@ -78,7 +80,7 @@ namespace R2SEGA8::Core
 
     unsigned SN76489::tonePeriod(unsigned channel) const
     {
-        return state_.tone[channel] ? state_.tone[channel] : 1024;
+        return state_.tone[channel] ? state_.tone[channel] : (variant_ == Variant::Sega ? 1 : 1024);
     }
 
     unsigned SN76489::noisePeriod() const
@@ -107,9 +109,16 @@ namespace R2SEGA8::Core
             --count;
         if (!count)
         {
-            // AN: realimentação de 15 bits, com dois estágios até a saída; não usar os taps do PSG Sega.
-            const auto feedback = ((state_.noiseShift >> 2) ^ ((state_.noise & 4) ? (state_.noiseShift >> 3) : 0)) & 1;
-            state_.noiseShift = (state_.noiseShift >> 1) | (feedback << 16);
+            if (variant_ == Variant::Sega)
+            {
+                const auto feedback = (state_.noiseShift ^ ((state_.noise & 4) ? (state_.noiseShift >> 3) : 0)) & 1;
+                state_.noiseShift = (state_.noiseShift >> 1) | (feedback << 15);
+            }
+            else
+            {
+                const auto feedback = ((state_.noiseShift >> 2) ^ ((state_.noise & 4) ? (state_.noiseShift >> 3) : 0)) & 1;
+                state_.noiseShift = (state_.noiseShift >> 1) | (feedback << 16);
+            }
             state_.output[3] = (state_.noiseShift & 1) != 0;
             changed = true;
             count = noisePeriod();
@@ -122,7 +131,7 @@ namespace R2SEGA8::Core
     {
         level_ = 0;
         for (unsigned channel = 0; channel < 4; ++channel)
-            if (state_.output[channel])
+            if ((variant_ == Variant::Sega && channel < 3 && state_.tone[channel] <= 1) || state_.output[channel])
                 level_ += volume_[state_.attenuation[channel]] * channelGains_[channel];
         levelPerClock_ = static_cast<double>(level_) * sampleRate_;
     }
