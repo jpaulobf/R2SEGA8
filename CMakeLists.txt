@@ -14,6 +14,7 @@ add_library(r2sega8_core STATIC
     src/Core/CPU/Z80/Z80.cpp
     src/Core/CPU/Z80/Z80Clock.cpp
     src/Core/VDP/TMS9918/TMS9918.cpp
+    src/Core/VDP/SegaVDP/SegaVDP.cpp
     src/Common/RomFile.cpp
     src/Core/Cartridge/Cartridge.cpp
     src/Core/Board.cpp
@@ -107,6 +108,12 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(master_system_input_tests tests/Systems/MasterSystemInputTests.cpp)
+    target_link_libraries(master_system_input_tests PRIVATE r2sega8_core)
+    add_test(NAME master_system_input_tests COMMAND master_system_input_tests)
+    add_executable(sega_vdp_tests tests/Core/SegaVDPTests.cpp)
+    target_link_libraries(sega_vdp_tests PRIVATE r2sega8_core)
+    add_test(NAME sega_vdp_tests COMMAND sega_vdp_tests)
     add_executable(state_archive_tests tests/Core/StateArchiveTests.cpp)
     target_link_libraries(state_archive_tests PRIVATE r2sega8_core)
     add_test(NAME state_archive_tests COMMAND state_archive_tests)
