@@ -2,7 +2,18 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
-## Unrelease
+## v0.2.5
+
+- Display > Console Profile oferece Auto, NTSC e PAL para o Master System.
+  Auto seleciona PAL para ROMs com indicação de Europa ou Austrália no nome e
+  NTSC nos demais casos; mudar o perfil reinicia o jogo carregado. A opção fica
+  desabilitada enquanto um jogo de SG-1000 está aberto.
+- Perfil PAL do Master System com 313 linhas, contador vertical PAL e clocks de
+  CPU e PSG correspondentes, a aproximadamente 49,70 Hz. Corrigido o piscar
+  das primeiras linhas de The Addams Family (Europe).
+- VSync mantém a cadência de emulação do console em monitores mais rápidos,
+  repetindo quadros de apresentação quando necessário. Testes cobrem os perfis,
+  o contador PAL e a disponibilidade do menu.
 
 - File > Recent Files reúne até dez ROMs carregadas com sucesso, com as mais
   recentes primeiro; o seletor volta à última pasta de ROM disponível. Histórico
