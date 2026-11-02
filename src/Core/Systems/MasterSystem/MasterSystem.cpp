@@ -4,8 +4,9 @@
 
 namespace R2SEGA8::Core
 {
-    MasterSystem::MasterSystem(Core::Cartridge cartridge)
-        : Board(Common::SystemType::MasterSystem, std::move(cartridge), 8 * 1024)
+    MasterSystem::MasterSystem(Core::Cartridge cartridge, bool pal)
+        : Board(Common::SystemType::MasterSystem, std::move(cartridge), 8 * 1024), pal_(pal), vdp_(pal),
+          psg_(pal ? 3546893 : 3579545, SN76489::DefaultSampleRate, SN76489::Variant::Sega)
     {
         if (cartridge_.profile() != CartridgeProfile::PlainROM || cartridge_.rom().size() > 0x100000)
             throw std::runtime_error("The Sega mapper profile supports ROMs up to 1 MiB and does not support this cartridge profile.");
@@ -96,6 +97,8 @@ namespace R2SEGA8::Core
 
     void MasterSystem::clock(const Z80Pins &)
     {
+        if (!peripheralClockDue())
+            return;
         vdp_.runMasterTicks(3);
         psg_.tick();
         controls_.updateFrame(vdp_.state().completedFrames);

@@ -12,11 +12,15 @@ namespace R2SEGA8::Core
     {
     public:
         // Aceita ROMs de até 1 MiB e aloca 8 KiB de RAM interna zerada.
-        explicit MasterSystem(Core::Cartridge cartridge);
+        explicit MasterSystem(Core::Cartridge cartridge, bool pal = false);
 
         bool hasMemoryMap() const override { return true; }
-        unsigned clockFrequency() const override { return 3579545; }
-        unsigned cyclesPerFrame() const override { return SegaVDP::MasterTicksPerFrame / 3; }
+        unsigned clockFrequency() const override { return pal_ ? 3546893 : 3579545; }
+        unsigned cyclesPerFrame() const override { return SegaVDP::DotsPerLine * 2 * vdp_.linesPerFrame() / 3; }
+        std::optional<Common::ConsoleProfile> consoleProfile() const override
+        {
+            return pal_ ? Common::ConsoleProfile::PAL : Common::ConsoleProfile::NTSC;
+        }
         VideoFrame videoFrame() const override { return vdp_.frame(); }
         void setRenderLayers(bool sprites, bool tiles) override
         {
@@ -43,11 +47,12 @@ namespace R2SEGA8::Core
         const SN76489 &psg() const { return psg_; }
 
     private:
+        bool pal_;
         std::array<std::uint8_t, 3> banks_{{0, 1, 2}};
         std::uint8_t mapperControl_ = 0;
         std::size_t bankMask_ = 0;
         SegaVDP vdp_;
-        SN76489 psg_{SN76489::DefaultClock, SN76489::DefaultSampleRate, SN76489::Variant::Sega};
+        SN76489 psg_;
         IO::ControllerInput controls_;
     };
 }
