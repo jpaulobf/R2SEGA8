@@ -39,6 +39,7 @@ namespace
         auto board = Systems::createBoard(type, std::move(cartridge));
         board->setAudioSettings(audio);
         board->setSpriteUnlimited(execution.unlimitedSpritesEnabled);
+        board->setRenderLayers(execution.renderSprites, execution.renderTiles);
         return board;
     }
 
@@ -49,13 +50,15 @@ namespace
         std::printf("System: %s\nFile: %s\nROM: %zu bytes | System RAM: %zu bytes\n", Common::systemName(board.type()),
                     path.c_str(), loaded.rom().size(), board.ram().size());
         if (!loaded.ram().empty())
-            std::printf("Cartridge RAM: %zu bytes (The Castle profile)\n", loaded.ram().size());
+            std::printf("Cartridge RAM: %zu bytes\n", loaded.ram().size());
         if (loaded.header())
             std::printf("Sega header: 0x%04X | Region: %X | Size code: %X\n", static_cast<unsigned>(loaded.header()->offset),
                         static_cast<unsigned>(loaded.header()->region), static_cast<unsigned>(loaded.header()->sizeCode));
-        if (board.hasMemoryMap())
+        if (board.type() == Common::SystemType::SG1000)
             std::puts("SG-1000: Z80 and TMS9918 video enabled (Graphics I/II, Text, Multicolor and sprites). Controllers enabled. "
                       "SN76489AN audio enabled. Cartridge banking is pending.");
+        else if (board.type() == Common::SystemType::MasterSystem && board.hasMemoryMap())
+            std::puts("Master System: NTSC Mode 4 video, PSG audio, VDP interrupts and basic controllers enabled; other mappers are pending.");
         else
             std::puts("ROM loaded; system memory mapping is not implemented yet.");
         std::fflush(stdout);
@@ -208,7 +211,10 @@ int R2SEGA8::Systems::Engine::run()
                 rewind.clear();
             executionSettings = settings;
             if (board)
+            {
                 board->setSpriteUnlimited(settings.unlimitedSpritesEnabled);
+                board->setRenderLayers(settings.renderSprites, settings.renderTiles);
+            }
         };
         callbacks.frame = [&]() -> R2SEGA8::Window::FrameView
         {
