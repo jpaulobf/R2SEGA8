@@ -146,6 +146,27 @@ namespace
         board->setInput({mask(Button::A) | mask(Button::TurboA), 0});
         check(!(board->input(0xdc) & 0x10), "Normal button must prevail over a released turbo phase");
     }
+
+    void restoreControls(const std::filesystem::path &path)
+    {
+        auto original = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        const auto thirdFrame = (2ULL * VDP::MasterTicksPerFrame + VDP::Height * VDP::MasterTicksPerLine) / 3;
+        original->setInput({mask(Button::TurboA) | mask(Button::Start), mask(Button::TurboB)});
+        original->runCycles(thirdFrame);
+        check(!(original->input(0xdc) & 0x10) && !(original->input(0xdd) & 8), "Turbo must be active at save time");
+        const auto saved = original->saveState();
+        auto restored = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        restored->loadState(saved);
+        check(restored->saveState() == saved && restored->input(0xdc) == original->input(0xdc) &&
+                  restored->input(0xdd) == original->input(0xdd) && restored->cpu().state().nmiLine,
+              "Restoring controls must preserve turbo phase, port values and the CPU NMI line");
+        restored->setInput({0, mask(Button::Start) | mask(Button::TurboB)});
+        original->setInput({0, mask(Button::Start) | mask(Button::TurboB)});
+        restored->runCycles(VDP::MasterTicksPerFrame / 3);
+        original->runCycles(VDP::MasterTicksPerFrame / 3);
+        check(restored->readMemory(0xc010) == 1 && restored->saveState() == original->saveState(),
+              "A held Pause must not retrigger NMI after restore, and turbo must continue deterministically");
+    }
 } // namespace
 int main()
 {
@@ -155,6 +176,7 @@ int main()
         lines(fixture.path);
         cpu(fixture.path);
         turbo(fixture.path);
+        restoreControls(fixture.path);
         std::cout << "SG-1000 controller lines, mirrors, CPU IN, Pause NMI and emulated turbo passed.\n";
         return 0;
     }

@@ -271,6 +271,21 @@ namespace
         unsigned expectedChanges = 2;
         if (settings.vsync != initialVSync || changes != expectedChanges)
             throw std::runtime_error("Display VSync must toggle back through the callback");
+        if (!settings.renderSprites || !settings.renderTiles)
+            throw std::runtime_error("Display layers must be enabled by default");
+        menuOption(window, "Display", "Render sprites");
+        ++expectedChanges;
+        if (settings.renderSprites || !settings.renderTiles || changes != expectedChanges)
+            throw std::runtime_error("Sprite rendering must toggle independently");
+        menuOption(window, "Display", "Render tiles");
+        ++expectedChanges;
+        if (settings.renderTiles || changes != expectedChanges)
+            throw std::runtime_error("Tile rendering must toggle independently");
+        menuOption(window, "Display", "Render sprites");
+        menuOption(window, "Display", "Render tiles");
+        expectedChanges += 2;
+        if (!settings.renderSprites || !settings.renderTiles || changes != expectedChanges)
+            throw std::runtime_error("Display layers must toggle back independently");
         if (!settings.vsync)
         {
             menuOption(window, "Display", "VSync");
@@ -618,8 +633,11 @@ int main()
                 throw std::runtime_error("Missing native test window");
             auto *nativeWindow = nativeWindows[0];
             const auto windowID = SDL_GetWindowID(nativeWindow);
-            if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 0.00")
+            const std::string idleTitle = SDL_GetWindowTitle(nativeWindow);
+            const std::string idleSuffix = " | FPS : 0.00";
+            if (idleTitle.size() <= idleSuffix.size() || idleTitle.compare(idleTitle.size() - idleSuffix.size(), idleSuffix.size(), idleSuffix) != 0)
                 throw std::runtime_error("The idle title must show zero emulated FPS without a ROM name");
+            const auto titlePrefix = idleTitle.substr(0, idleTitle.size() - idleSuffix.size());
             SDL_free(nativeWindows);
             SDL_Event focus{};
             focus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
@@ -685,12 +703,12 @@ int main()
                 throw std::runtime_error("Frame callback did not produce a nearest-filtered presentation texture");
             displayOptions(window, nativeWindow);
             fullscreenOptions(window, nativeWindow);
-            if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 59.92 | 01.sg")
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 59.92 | 01.sg")
                 throw std::runtime_error("FPS must precede the ROM filename in the native title");
             emulatedFPS = 245.75;
             window.render();
             window.render();
-            if (std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 245.75 | 01.sg")
+            if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 245.75 | 01.sg")
                 throw std::runtime_error("Updated emulated FPS must replace the title value without duplicating the filename");
             executionOptions(window, nativeWindow, executionSettings, executionChanges);
             pauseOptions(window, nativeWindow, pause, menuPaused, pauseToggles);
@@ -797,7 +815,7 @@ int main()
                 throw std::runtime_error("File menu did not open");
             ImGui::ActivateItemByID(ImHashStr("Unload", 0, fileMenu->ID));
             window.render();
-            if (unloads != 1 || !loadedPath.empty() || std::string(SDL_GetWindowTitle(nativeWindow)) != "R2SEGA8 | FPS : 0.00" ||
+            if (unloads != 1 || !loadedPath.empty() || std::string(SDL_GetWindowTitle(nativeWindow)) != idleTitle ||
                 hasVideoTexture(8, 8))
                 throw std::runtime_error("Unload must notify the application, clear the video and restore the title");
             resetKey.key.windowID = windowID;

@@ -1,5 +1,6 @@
 #include "Common/RomFile.h"
 #include "Systems/BoardFactory.h"
+#include "Core/Systems/MasterSystem/MasterSystem.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -163,7 +164,112 @@ int main()
         check(std::all_of(smallBoard->ram().begin(), smallBoard->ram().end(), [](auto value)
                           { return value == 0; }),
               "RAM initialization");
-        for (auto type : {SystemType::SC3000, SystemType::MasterSystem, SystemType::GameGear})
+        const auto smsProgram = fixtures.write("cpu.sms", {0x31, 0x00, 0xe0, 0x3e, 0x42, 0x32, 0x05, 0xc0, 0x76});
+        auto sms = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(smsProgram));
+        check(sms->hasMemoryMap() && sms->cyclesPerFrame() == 59736 && sms->clockFrequency() == 3579545, "SMS mapping or scheduling");
+        check(sms->ram().size() == 8192 && sms->readMemory(0) == 0x31 && sms->readMemory(9) == 0xff, "SMS initial ROM and RAM");
+        sms->writeMemory(0, 0xff);
+        check(sms->readMemory(0) == 0x31, "SMS ROM must be read-only");
+        check(sms->runCycles(34) == 34 && sms->cpu().state().halted && sms->readMemory(0xe005) == 0x42,
+              "SMS Z80 program writes mirrored RAM");
+        // Como Shadow Dancer, este programa chama uma rotina antes de definir SP.
+        // A pilha inicial em FFFF mudaria o banco 0 para 3 ao empilhar o retorno.
+        std::vector<std::uint8_t> earlyCallROM(4 * 0x4000, 0);
+        const std::uint8_t earlyCallCode[] = {0xcd, 0x10, 0x00, 0xc3, 0x00, 0x04};
+        std::copy(std::begin(earlyCallCode), std::end(earlyCallCode), earlyCallROM.begin());
+        earlyCallROM[0x10] = 0xc9;
+        earlyCallROM[0x400] = 0x76;
+        earlyCallROM[0xc400] = 0xc3;
+        earlyCallROM[0xc402] = 0x04;
+        auto earlyCallCPU = Systems::createBoard(SystemType::MasterSystem,
+                                                 Core::Cartridge(fixtures.write("early-call.sms", earlyCallROM)));
+        earlyCallCPU->runCycles(100);
+        check(earlyCallCPU->cpu().state().halted && earlyCallCPU->cpu().state().pc == 0x401 &&
+                  earlyCallCPU->cpu().state().sp == 0xdff0 && earlyCallCPU->readMemory(0x400) == 0x76 &&
+                  earlyCallCPU->readMemory(0xdfee) == 3 && earlyCallCPU->readMemory(0xdfef) == 0,
+              "SMS direct boot must supply a BIOS-compatible stack without corrupting mapper banks");
+        const auto vdpProgram = fixtures.write("vdp-cpu.sms", {0x3e, 0x23, 0xd3, 0xbf, 0x3e, 0x41, 0xd3, 0xbf,
+                                                               0x3e, 0x5a, 0xd3, 0xbe, 0x76});
+        auto vdpCPU = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(vdpProgram));
+        vdpCPU->runCycles(100);
+        vdpCPU->output(0xbf, 0x23);
+        vdpCPU->output(0x18f, 0x01);
+        check(vdpCPU->cpu().state().halted && vdpCPU->input(0x1be) == 0x5a && vdpCPU->input(0x40) == 0 && vdpCPU->input(0x41) == 0xff,
+              "SMS Z80 VDP writes, port mirroring and buffered read");
+        vdpCPU->output(0xbf, 0x20);
+        vdpCPU->output(0xbf, 0x81);
+        vdpCPU->runCycles(vdpCPU->cyclesPerFrame());
+        check(vdpCPU->videoFrame().number == 1 && (vdpCPU->input(0xbf) & 0x80), "SMS CPU clocks VDP through HALT to VBlank");
+        check(!(vdpCPU->input(0xbf) & 0x80), "SMS VDP status read acknowledges VBlank");
+        // Interrupção de linha real: handler reconhece BF, altera R8 e registra sua execução na RAM.
+        std::vector<std::uint8_t> rasterProgram(0x80, 0);
+        const std::vector<std::uint8_t> rasterMain = {0x31, 0x00, 0xdf, 0xed, 0x56, 0xfb, 0x76, 0xc3, 0x06, 0x00};
+        const std::vector<std::uint8_t> rasterISR = {0xdb, 0xbf, 0x3e, 0x08, 0xd3, 0xbf, 0x3e, 0x88, 0xd3, 0xbf,
+                                                     0x3e, 0x5a, 0x32, 0x00, 0xc0, 0xfb, 0xed, 0x4d};
+        std::copy(rasterMain.begin(), rasterMain.end(), rasterProgram.begin());
+        std::copy(rasterISR.begin(), rasterISR.end(), rasterProgram.begin() + 0x38);
+        auto rasterCPU = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(fixtures.write("raster-cpu.sms", rasterProgram)));
+        rasterCPU->output(0xbf, 1);
+        rasterCPU->output(0xbf, 0x8a);
+        rasterCPU->output(0xbf, 0x14);
+        rasterCPU->output(0xbf, 0x80);
+        rasterCPU->runCycles(4000);
+        check(rasterCPU->readMemory(0xc000) == 0x5a && static_cast<const Core::MasterSystem &>(*rasterCPU).vdp().state().registers[8] == 8,
+              "SMS Z80 must service the VDP line interrupt and update scroll");
+        // ROM sintética espera a linha B0 via IN (7E), como fazem programas de inicialização.
+        const std::vector<std::uint8_t> counterProgram = {0xdb, 0x7e, 0xfe, 0xb0, 0x20, 0xfa, 0x3e, 0x5a, 0x32, 0x00, 0xc0, 0x76};
+        auto counterCPU = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(fixtures.write("vcounter.sms", counterProgram)));
+        counterCPU->runCycles(1000);
+        check(!counterCPU->cpu().state().halted && counterCPU->readMemory(0xc000) == 0, "CPU must wait for vertical line B0");
+        counterCPU->runCycles(counterCPU->cyclesPerFrame());
+        check(counterCPU->cpu().state().halted && counterCPU->readMemory(0xc000) == 0x5a,
+              "CPU must leave its vertical counter polling loop");
+        check(counterCPU->input(0x146) == static_cast<const Core::MasterSystem &>(*counterCPU).vdp().verticalCounter(),
+              "Even vertical-counter port mirrors ignore upper address bits");
+        sms->writeMemory(0xffff, 0x5a);
+        check(sms->readMemory(0xdfff) == 0x5a, "SMS upper RAM mirror");
+        std::vector<std::uint8_t> smsBanks(8 * 0x4000);
+        for (unsigned bank = 0; bank < 8; ++bank)
+            std::fill_n(smsBanks.begin() + bank * 0x4000, 0x4000, static_cast<std::uint8_t>(bank));
+        auto mapped = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(fixtures.write("banked.sms", smsBanks)));
+        check(mapped->readMemory(0x3fff) == 0 && mapped->readMemory(0x4000) == 1 && mapped->readMemory(0xbfff) == 2,
+              "SMS initial banks");
+        mapped->writeMemory(0xfffd, 3);
+        mapped->writeMemory(0xfffe, 4);
+        mapped->writeMemory(0xffff, 0xff);
+        check(mapped->readMemory(0x03ff) == 0 && mapped->readMemory(0x0400) == 3 && mapped->readMemory(0x3fff) == 3 &&
+                  mapped->readMemory(0x4000) == 4 && mapped->readMemory(0x8000) == 7,
+              "SMS banks, fixed first KiB and address-line mirroring");
+        check(mapped->readMemory(0xdffd) == 3 && mapped->readMemory(0xfffe) == 4, "Mapper writes also update system RAM");
+        mapped->writeMemory(0xdffd, 6);
+        check(mapped->readMemory(0xfffd) == 6 && mapped->readMemory(0x0400) == 3, "RAM mirror must not change mapper");
+        mapped->writeMemory(0x8000, 0x55);
+        check(mapped->readMemory(0x8000) == 7, "SMS mapped ROM must be read-only");
+        mapped->writeMemory(0xfffc, 0x08);
+        mapped->writeMemory(0x8000, 0x11);
+        mapped->writeMemory(0xbfff, 0x22);
+        mapped->writeMemory(0xffff, 5);
+        mapped->writeMemory(0xfffc, 0x0c);
+        check(mapped->readMemory(0x8000) == 0, "SMS cartridge RAM banks must be separate");
+        mapped->writeMemory(0x8000, 0x33);
+        mapped->writeMemory(0xfffc, 0x08);
+        check(mapped->readMemory(0x8000) == 0x11 && mapped->readMemory(0xbfff) == 0x22, "SMS cartridge RAM retention");
+        mapped->writeMemory(0xfffc, 0);
+        check(mapped->readMemory(0x8000) == 5, "SMS ROM bank restored after disabling cartridge RAM");
+        mapped->writeMemory(0xfffc, 0x0c);
+        check(mapped->readMemory(0x8000) == 0x33, "SMS second cartridge RAM bank retention");
+        std::vector<std::uint8_t> bankCode(4 * 0x4000, 0);
+        const std::vector<std::uint8_t> switchCode = {0x3e, 0x03, 0x32, 0xff, 0xff, 0xc3, 0x00, 0x80};
+        std::copy(switchCode.begin(), switchCode.end(), bankCode.begin());
+        bankCode[3 * 0x4000] = 0x76;
+        auto bankCPU = Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(fixtures.write("bank-cpu.sms", bankCode)));
+        bankCPU->runCycles(60);
+        check(bankCPU->cpu().state().halted && bankCPU->cpu().state().pc == 0x8001,
+              "SMS CPU must execute code from its newly selected ROM bank");
+        const auto largeSms = fixtures.write("too-large.sms", std::vector<std::uint8_t>(0x100001, 0));
+        rejects([&]
+                { Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(largeSms)); }, "Oversized Sega mapper ROM accepted");
+        for (auto type : {SystemType::SC3000, SystemType::GameGear})
         {
             auto other = Systems::createBoard(type, Core::Cartridge(small));
             check(other->type() == type && other->cartridge().rom().size() == 3, "System factory lost cartridge/type");

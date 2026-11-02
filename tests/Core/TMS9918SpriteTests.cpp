@@ -77,6 +77,31 @@ namespace
         vdp.readStatus();
     }
 
+    // As camadas afetam somente a imagem: colisões continuam ativas e snapshots não mudam a preferência.
+    void renderLayers()
+    {
+        for (const bool sprites : {false, true})
+            for (const bool tiles : {false, true})
+            {
+                auto vdp = scene();
+                upload(*vdp, 0, {255, 255, 255, 255, 255, 255, 255, 255});
+                upload(*vdp, 0x2000, {0xf2});
+                solid(*vdp);
+                sprite(*vdp, 0, 0xff, 10, 0, 2);
+                sprite(*vdp, 1, 0xff, 10, 0, 6);
+                upload(*vdp, SAT + 8, {0xd0});
+                const auto snapshot = std::make_unique<VDP::State>(vdp->state());
+                vdp->setRenderLayers(sprites, tiles);
+                vdp->restore(*snapshot);
+                warm(*vdp);
+                vdp->runMasterTicks(VDP::MasterTicksPerFrame);
+                pixel(*vdp, 10, 0, sprites ? 2 : tiles ? 1
+                                                       : 0);
+                pixel(*vdp, 30, 0, tiles ? 1 : 0);
+                check((vdp->state().status & 0x20) != 0, "Hidden sprites must still collide");
+            }
+    }
+
     // Confere todos os pixels nas quatro combinações de SIZE/MAG e nas bordas da tela.
     void geometry()
     {
@@ -418,6 +443,7 @@ int main()
     try
     {
         geometry();
+        renderLayers();
         collisions();
         offscreenCollisions();
         overflow();

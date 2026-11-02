@@ -44,6 +44,28 @@ int main()
 {
     try
     {
+        for (unsigned mode : {0u, 4u})
+        {
+            PSG sega(PSG::DefaultClock, PSG::DefaultSampleRate, PSG::Variant::Sega);
+            sega.write(static_cast<std::uint8_t>(0xe0 | mode));
+            std::uint16_t expected = 0x8000;
+            for (unsigned i = 0; i < 100; ++i)
+            {
+                sega.runClocks(i ? 512 : 16);
+                const auto feedback = (expected ^ ((mode & 4) ? expected >> 3 : 0)) & 1;
+                expected = static_cast<std::uint16_t>((expected >> 1) | (feedback << 15));
+                check(sega.state().noiseShift == expected && sega.state().output[3] == bool(expected & 1), "Sega noise sequence");
+            }
+        }
+        PSG sega(PSG::DefaultClock, PSG::DefaultSampleRate, PSG::Variant::Sega);
+        mute(sega);
+        sega.write(0x90);
+        for (unsigned period : {0u, 1u})
+        {
+            tone(sega, 0, period);
+            sega.runClocks(256);
+            check(sega.level() == 0.25f, "Sega zero and one periods produce constant output");
+        }
         PSG psg;
         check(psg.ready() && psg.state().noiseShift == 0x10000 && psg.state().attenuation[0] == 0, "AN startup state/READY");
         psg.write(0x85);
