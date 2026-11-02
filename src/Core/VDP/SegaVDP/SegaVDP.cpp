@@ -149,7 +149,7 @@ namespace R2SEGA8::Core
                 drawPixel();
             if (state_.dot == Width)
                 // A busca é aproximada ao fim da linha; o hardware a distribui pela linha.
-                selectSprites((state_.line + 1) % LinesPerFrame);
+                selectSprites((state_.line + 1) % linesPerFrame());
             // HClock -18, -17, -16 e -15 correspondem aos dots 324–327.
             // Os eventos são anteriores ao primeiro pixel ativo da linha seguinte.
             if (state_.dot == HBlankEventDot)
@@ -160,7 +160,7 @@ namespace R2SEGA8::Core
             }
             if (state_.dot == HBlankEventDot + 1)
             {
-                const unsigned nextLine = (state_.line + 1) % LinesPerFrame;
+                const unsigned nextLine = (state_.line + 1) % linesPerFrame();
                 if (nextLine <= Height)
                 {
                     if (state_.lineCounter == 0)
@@ -186,7 +186,7 @@ namespace R2SEGA8::Core
                     state_.drawingImage ^= 1;
                     ++state_.completedFrames;
                 }
-                else if (state_.line == LinesPerFrame)
+                else if (state_.line == linesPerFrame())
                     state_.line = 0;
             }
         }

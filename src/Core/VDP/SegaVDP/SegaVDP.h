@@ -6,12 +6,12 @@
 
 namespace R2SEGA8::Core
 {
-    // Perfil 315-5124 (SMS1) NTSC: portas, raster e Mode 4 de 192 linhas.
+    // Perfil 315-5124 (SMS1): portas, raster NTSC/PAL e Mode 4 de 192 linhas.
     class SegaVDP
     {
     public:
         static constexpr unsigned Width = 256, Height = 192;
-        static constexpr unsigned DotsPerLine = 342, LinesPerFrame = 262;
+        static constexpr unsigned DotsPerLine = 342, LinesPerFrame = 262, PalLinesPerFrame = 313;
         static constexpr unsigned MasterTicksPerFrame = DotsPerLine * 2 * LinesPerFrame;
         static constexpr unsigned FrameBytes = Width * Height * 4;
         struct State
@@ -30,6 +30,9 @@ namespace R2SEGA8::Core
             std::uint64_t completedFrames = 0;
         };
 
+        explicit SegaVDP(bool pal = false) : pal_(pal) {}
+        unsigned linesPerFrame() const { return pal_ ? PalLinesPerFrame : LinesPerFrame; }
+
         // A VRAM e CRAM inicializam em zero por convenção; os acessos são imediatos nesta etapa.
         std::uint8_t readData();
         void writeData(std::uint8_t value);
@@ -40,8 +43,9 @@ namespace R2SEGA8::Core
         std::uint8_t verticalCounter() const
         {
             // A mudança ocorre no apagamento horizontal, antes do próximo pixel visível.
-            const unsigned line = (state_.line + (state_.dot > HBlankEventDot + 2 ? 1 : 0)) % LinesPerFrame;
-            return static_cast<std::uint8_t>(line <= 0xda ? line : line - 6);
+            const unsigned line = (state_.line + (state_.dot > HBlankEventDot + 2 ? 1 : 0)) % linesPerFrame();
+            return static_cast<std::uint8_t>(pal_ ? (line <= 0xf2 ? line : line - 57)
+                                                  : (line <= 0xda ? line : line - 6));
         }
         bool interrupt() const
         {
@@ -59,6 +63,7 @@ namespace R2SEGA8::Core
     private:
         // HClock -18, em relação ao início dos 256 pixels ativos.
         static constexpr unsigned HBlankEventDot = DotsPerLine - 18;
+        bool pal_ = false;
         State state_{};
         struct SpriteLine
         {
