@@ -4,11 +4,13 @@
 #include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "Core/Systems/GameGear/GameGear.h"
 #include <stdexcept>
+#include <algorithm>
+#include <cctype>
 #include <utility>
 
 namespace R2SEGA8::Systems
 {
-    std::unique_ptr<Core::Board> createBoard(Common::SystemType type, Core::Cartridge cartridge)
+    std::unique_ptr<Core::Board> createBoard(Common::SystemType type, Core::Cartridge cartridge, Common::ConsoleProfile profile)
     {
         using Common::SystemType;
         switch (type)
@@ -18,7 +20,14 @@ namespace R2SEGA8::Systems
         case SystemType::SC3000:
             return std::make_unique<Core::SC3000>(std::move(cartridge));
         case SystemType::MasterSystem:
-            return std::make_unique<Core::MasterSystem>(std::move(cartridge));
+        {
+            auto name = cartridge.path().filename().u8string();
+            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c)
+                           { return static_cast<char>(std::tolower(c)); });
+            const bool european = name.find("(europe") != std::string::npos || name.find("(australia") != std::string::npos;
+            const bool pal = profile == Common::ConsoleProfile::PAL || (profile == Common::ConsoleProfile::Auto && european);
+            return std::make_unique<Core::MasterSystem>(std::move(cartridge), pal);
+        }
         case SystemType::GameGear:
             return std::make_unique<Core::GameGear>(std::move(cartridge));
         default:
