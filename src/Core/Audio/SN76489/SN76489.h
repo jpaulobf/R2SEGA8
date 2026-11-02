@@ -49,9 +49,10 @@ namespace R2SEGA8::Core
         };
 
         // Configura os clocks de entrada e a taxa PCM; exige 0 < sampleRate <= clockFrequency.
-        explicit SN76489(unsigned clockFrequency = DefaultClock, unsigned sampleRate = DefaultSampleRate, Variant variant = Variant::TI);
+        explicit SN76489(unsigned clockFrequency = DefaultClock, unsigned sampleRate = DefaultSampleRate,
+                         Variant variant = Variant::TI, bool initiallyMuted = false);
 
-        // Reinicia chip e amostrador; volumes máximos seguem o perfil AN, sem garantir estado elétrico de partida.
+        // Reinicia chip e amostrador; o estado inicial do AN é configurável pela placa.
         void reset();
 
         // Aplica latch/data imediatamente e baixa READY por 32 clocks; o chamador respeita READY/WAIT.
@@ -100,6 +101,7 @@ namespace R2SEGA8::Core
 
         State state_;
         Variant variant_;
+        bool initiallyMuted_;
         Common::AudioSettings audioSettings_;
         unsigned clockFrequency_, sampleRate_, samplePhase_ = 0;
         float level_ = 0, masterGain_ = 1;

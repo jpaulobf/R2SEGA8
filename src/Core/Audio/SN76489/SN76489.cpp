@@ -5,7 +5,8 @@
 
 namespace R2SEGA8::Core
 {
-    SN76489::SN76489(unsigned clockFrequency, unsigned sampleRate, Variant variant) : variant_(variant), clockFrequency_(clockFrequency), sampleRate_(sampleRate)
+    SN76489::SN76489(unsigned clockFrequency, unsigned sampleRate, Variant variant, bool initiallyMuted)
+        : variant_(variant), initiallyMuted_(initiallyMuted), clockFrequency_(clockFrequency), sampleRate_(sampleRate)
     {
         if (!sampleRate || sampleRate > clockFrequency)
             throw std::invalid_argument("Invalid PSG clock/sample rate.");
@@ -22,6 +23,8 @@ namespace R2SEGA8::Core
         state_ = {};
         if (variant_ == Variant::Sega)
             state_.noiseShift = 0x8000;
+        if (variant_ == Variant::Sega || initiallyMuted_)
+            state_.attenuation.fill(15);
         samplePhase_ = 0;
         sampleArea_ = previousInput_ = previousOutput_ = 0;
         samples_.clear();
