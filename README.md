@@ -8,9 +8,9 @@
 A Sega SG-1000, SC-3000, Master System and Game Gear emulator written from
 scratch in C++, developed alongside R2NES / R2BOY.
 
-The project is in early development. You can load ROMs and
-run SG-1000 games with backgrounds, sprites, controllers and PSG audio.
-Compatibility is still being improved; games are not fully supported yet.
+The project is in early development. SG-1000 emulation is stable for general
+use, with backgrounds, sprites, controllers and PSG audio. Master System
+emulation is experimental, and compatibility is still being improved.
 
 ## Opening a ROM
 
@@ -32,7 +32,10 @@ Starts at **3X**. Choose **1X–5X** in **Display**, or press **Ctrl+1–5**.
 The video fills the available area while keeping its aspect ratio.
 Maximizing is allowed; manual resizing is blocked.
 
-**Display > VSync** synchronizes presentation with the monitor; it starts enabled.
+**Display > Console Profile** selects Auto, NTSC or PAL for Master System. Auto
+uses PAL for ROM filenames tagged Europe or Australia and NTSC otherwise.
+Changing the profile restarts the loaded Master System game. PAL runs at about
+49.70 Hz. **Display > VSync** synchronizes presentation with the monitor; it starts enabled.
 Hold **Tab** for silent fast-forward. **Hacks > Enable Fast-Forward** starts enabled.
 The title shows emulated FPS before the ROM filename.
 
