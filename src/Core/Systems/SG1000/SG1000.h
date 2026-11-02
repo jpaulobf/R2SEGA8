@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Audio/SN76489/SN76489.h"
-#include "Core/IO/Joypad.h"
+#include "Core/IO/ControllerInput.h"
 #include "Core/VDP/TMS9918/TMS9918.h"
 #include "Core/Board.h"
 
@@ -65,14 +65,11 @@ namespace R2SEGA8::Core
         void setAudioSettings(const Common::AudioSettings &settings) override { psg_.setAudioSettings(settings); }
 
         void setSpriteUnlimited(bool enabled) override { vdp_.setSpriteUnlimited(enabled); }
+        void setRenderLayers(bool sprites, bool tiles) override { vdp_.setRenderLayers(sprites, tiles); }
 
     private:
-        // Aplica direções/botões 1/2; o turbo usa a publicação de quadros do VDP, inclusive em HALT/WAIT.
-        void applyButtons();
         Core::TMS9918 vdp_;
         Core::SN76489 psg_;
-        Core::IO::Joypad joypad_;
-        Common::InputState buttons_{};
-        std::uint64_t inputFrame_ = 0;
+        Core::IO::ControllerInput controls_;
     };
 }

@@ -17,8 +17,8 @@ namespace R2SEGA8::Core
         auto video = std::make_unique<TMS9918::State>(vdp_.state());
         auto audio = psg_.snapshot();
         auto ram = ram_, cartRam = cartridge_.ram();
-        auto buttons = buttons_;
-        auto frame = inputFrame_;
+        auto buttons = controls_.buttons();
+        auto frame = controls_.frame();
         ar(magic, version, profile, hash, size);
         cpuState.stateArchive(ar);
         video->stateArchive(ar);
@@ -63,10 +63,7 @@ namespace R2SEGA8::Core
         psg_.restore(audio);
         ram_ = std::move(ram);
         cartridge_.ram() = std::move(cartRam);
-        buttons_ = buttons;
-        inputFrame_ = frame;
-        for (unsigned player = 0; player < buttons_.size(); ++player)
-            joypad_.setButtons(player, Common::controllerButtons(buttons_[player], inputFrame_));
+        controls_.setInput(buttons, frame);
     }
     SG1000::SG1000(Core::Cartridge cartridge) : Board(Common::SystemType::SG1000, std::move(cartridge), 1024)
     {
@@ -99,32 +96,20 @@ namespace R2SEGA8::Core
 
     void SG1000::setButtons(unsigned player, Common::ButtonMask buttons)
     {
-        if (player >= buttons_.size())
-            throw std::out_of_range("Invalid controller player.");
-        auto next = buttons_;
-        next[player] = buttons;
-        setInput(next);
+        setInput(controls_.withPlayer(player, buttons));
     }
 
     void SG1000::setInput(const Common::InputState &buttons)
     {
-        buttons_ = buttons;
-        applyButtons();
+        controls_.setInput(buttons, vdp_.state().completedFrames);
         // Pause/Hold é um botão da máquina: qualquer Start mapeado mantém a mesma linha NMI.
-        cpu().setNMI(((buttons_[0] | buttons_[1]) & Common::mask(Common::Button::Start)) != 0);
-    }
-
-    void SG1000::applyButtons()
-    {
-        inputFrame_ = vdp_.state().completedFrames;
-        for (unsigned player = 0; player < buttons_.size(); ++player)
-            joypad_.setButtons(player, Common::controllerButtons(buttons_[player], inputFrame_));
+        cpu().setNMI(((buttons[0] | buttons[1]) & Common::mask(Common::Button::Start)) != 0);
     }
 
     std::uint8_t SG1000::input(std::uint16_t port)
     {
         if ((port & 0xc0) == 0xc0)
-            return (port & 1) ? joypad_.readOdd() : joypad_.readEven();
+            return (port & 1) ? controls_.joypad().readOdd() : controls_.joypad().readEven();
         if ((port & 0xc0) != 0x80)
             return 0xff;
         const auto value = (port & 1) ? vdp_.readStatus() : vdp_.readData();
@@ -161,8 +146,7 @@ namespace R2SEGA8::Core
             cpu().setWAIT(true);
         else if (!wasReady)
             cpu().setWAIT(false);
-        if (vdp_.state().completedFrames != inputFrame_)
-            applyButtons();
+        controls_.updateFrame(vdp_.state().completedFrames);
         cpu().setIRQ(vdp_.interrupt());
     }
 }
