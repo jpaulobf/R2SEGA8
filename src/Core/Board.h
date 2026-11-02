@@ -51,6 +51,9 @@ namespace R2SEGA8::Core
         // Define o limite de sprites nos sistemas que oferecem esta opção.
         virtual void setSpriteUnlimited(bool) {}
 
+        // Controla somente a apresentação das camadas, sem alterar o hardware emulado.
+        virtual void setRenderLayers(bool, bool) {}
+
         // Recebe intenções lógicas do jogador; placas sem controles implementados ignoram a atualização.
         virtual void setButtons(unsigned, Common::ButtonMask) {}
 
