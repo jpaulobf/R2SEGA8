@@ -36,9 +36,10 @@ namespace
                                                  const Common::AudioSettings &audio,
                                                  const Common::ExecutionSettings &execution)
     {
-        auto board = Systems::createBoard(type, std::move(cartridge));
+        auto board = Systems::createBoard(type, std::move(cartridge), execution.consoleProfile);
         board->setAudioSettings(audio);
         board->setSpriteUnlimited(execution.unlimitedSpritesEnabled);
+        board->setCPUOverclock(execution.cpuOverclockEnabled, execution.cpuMultiplier);
         board->setRenderLayers(execution.renderSprites, execution.renderTiles);
         return board;
     }
@@ -58,7 +59,8 @@ namespace
             std::puts("SG-1000: Z80 and TMS9918 video enabled (Graphics I/II, Text, Multicolor and sprites). Controllers enabled. "
                       "SN76489AN audio enabled. Cartridge banking is pending.");
         else if (board.type() == Common::SystemType::MasterSystem && board.hasMemoryMap())
-            std::puts("Master System: NTSC Mode 4 video, PSG audio, VDP interrupts and basic controllers enabled; other mappers are pending.");
+            std::printf("Master System: %s Mode 4 video, PSG audio, VDP interrupts and basic controllers enabled; other mappers are pending.\n",
+                        board.consoleProfile() == Common::ConsoleProfile::PAL ? "PAL" : "NTSC");
         else
             std::puts("ROM loaded; system memory mapping is not implemented yet.");
         std::fflush(stdout);
@@ -98,15 +100,20 @@ int R2SEGA8::Systems::Engine::run()
         R2SEGA8::Common::ExecutionSettings executionSettings;
         R2SEGA8::Common::AudioSettings audioSettings;
         R2SEGA8::Systems::Input input;
+        // Só publica a máquina depois da construção ou restauração completa.
+        const auto publishBoard = [&](std::unique_ptr<R2SEGA8::Core::Board> next)
+        {
+            board = std::move(next);
+            rewind.clear();
+            input.clear();
+            resetAudio = resetTiming = true;
+            resetFPS();
+        };
         R2SEGA8::Window::Callbacks callbacks;
         callbacks.openRom = [&](const std::filesystem::path &file, R2SEGA8::Common::SystemType type)
         {
             auto next = configuredBoard(type, R2SEGA8::Core::Cartridge(file), audioSettings, executionSettings);
-            board = std::move(next);
-            rewind.clear();
-            resetAudio = true;
-            resetFPS();
-            input.clear();
+            publishBoard(std::move(next));
             reportLoadedBoard(*board);
         };
         callbacks.memory = [&]() -> R2SEGA8::Window::MemoryView
@@ -152,11 +159,7 @@ int R2SEGA8::Systems::Engine::run()
                 auto next = configuredBoard(board->type(), board->cartridge(), audioSettings, executionSettings);
                 next->loadState(data);
                 next->setSpriteUnlimited(executionSettings.unlimitedSpritesEnabled);
-                board = std::move(next);
-                rewind.clear();
-                input.clear();
-                resetAudio = resetTiming = true;
-                resetFPS();
+                publishBoard(std::move(next));
                 std::cout << "Loaded state from slot " << slot << '\n';
             }
             catch (const std::exception &error)
@@ -172,19 +175,11 @@ int R2SEGA8::Systems::Engine::run()
             auto cartridge = board->cartridge();
             std::fill(cartridge.ram().begin(), cartridge.ram().end(), 0);
             auto next = configuredBoard(board->type(), std::move(cartridge), audioSettings, executionSettings);
-            board = std::move(next);
-            rewind.clear();
-            input.clear();
-            resetAudio = true;
-            resetFPS();
+            publishBoard(std::move(next));
         };
         callbacks.unload = [&]()
         {
-            board.reset();
-            rewind.clear();
-            input.clear();
-            resetAudio = true;
-            resetFPS();
+            publishBoard(nullptr);
         };
         callbacks.audioSettings = [&]()
         { return audioSettings; };
@@ -201,6 +196,8 @@ int R2SEGA8::Systems::Engine::run()
             if (board)
                 board->setAudioSettings(audioSettings);
         };
+        callbacks.consoleProfileAvailable = [&]()
+        { return !board || board->consoleProfile().has_value(); };
         callbacks.executionSettings = [&]()
         { return executionSettings; };
         callbacks.fps = [&]()
@@ -209,10 +206,22 @@ int R2SEGA8::Systems::Engine::run()
         {
             if (settings.rewindEnabled != executionSettings.rewindEnabled || settings.rewindLevel != executionSettings.rewindLevel)
                 rewind.clear();
+            if (settings.cpuOverclockEnabled != executionSettings.cpuOverclockEnabled || settings.cpuMultiplier != executionSettings.cpuMultiplier)
+                rewind.clear();
+            const bool profileChanged = settings.consoleProfile != executionSettings.consoleProfile;
+            if (profileChanged && board && board->consoleProfile())
+            {
+                auto cartridge = board->cartridge();
+                std::fill(cartridge.ram().begin(), cartridge.ram().end(), 0);
+                auto next = configuredBoard(board->type(), std::move(cartridge), audioSettings, settings);
+                publishBoard(std::move(next));
+                reportLoadedBoard(*board);
+            }
             executionSettings = settings;
             if (board)
             {
                 board->setSpriteUnlimited(settings.unlimitedSpritesEnabled);
+                board->setCPUOverclock(settings.cpuOverclockEnabled, settings.cpuMultiplier);
                 board->setRenderLayers(settings.renderSprites, settings.renderTiles);
             }
         };
@@ -334,7 +343,10 @@ int R2SEGA8::Systems::Engine::run()
                 board->setInput(buttons);
             if (loopMode == LoopMode::Hardware)
                 pacer.advance();
-            if (timedBoard() && !emulationPaused)
+            const bool vsyncFrameDue = loopMode != LoopMode::VSync || Clock::now() >= pacer.deadline();
+            if (loopMode == LoopMode::VSync && vsyncFrameDue)
+                pacer.advance();
+            if (timedBoard() && !emulationPaused && vsyncFrameDue)
             {
                 // Sem limite, vários quadros por apresentação reduzem a dependência do custo do renderer.
                 // O modo nativo continua recuperando até quatro quadros; VSync apresenta cada quadro.

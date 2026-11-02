@@ -83,6 +83,9 @@ namespace R2SEGA8::Window
         // Consulta as preferências de sincronização e disponibilidade do avanço rápido.
         std::function<Common::ExecutionSettings()> executionSettings;
 
+        // Disponibilidade da escolha de perfil no console carregado.
+        std::function<bool()> consoleProfileAvailable;
+
         // Publica as escolhas dos menus Display e Hacks; a aplicação define o ritmo de execução.
         std::function<void(const Common::ExecutionSettings &)> setExecutionSettings;
 

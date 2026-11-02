@@ -53,6 +53,12 @@ namespace R2SEGA8::Window
         std::string romName;
         std::string title;
 
+        unsigned displayWidth() const
+        {
+            const bool crop = callbacks.executionSettings && callbacks.executionSettings().cropLeftEnabled;
+            return crop && nativeSize.width > 8 ? nativeSize.width - 8 : nativeSize.width;
+        }
+
 #ifdef _WIN32
         HWND nativeWindow = nullptr;
         bool resizeHook = false;
@@ -85,7 +91,7 @@ namespace R2SEGA8::Window
             }
             maximized = false;
             const float density = std::max(1.0f, SDL_GetWindowPixelDensity(window));
-            fixedWidth = static_cast<int>(std::lround(nativeSize.width * displayScale / density));
+            fixedWidth = static_cast<int>(std::lround(displayWidth() * displayScale / density));
             fixedHeight = static_cast<int>(std::lround(nativeSize.height * displayScale / density + menuHeight));
             if (!SDL_SetWindowSize(window, fixedWidth, fixedHeight))
                 throw std::runtime_error(SDL_GetError());
@@ -160,6 +166,8 @@ namespace R2SEGA8::Window
             auto next = std::string(prefix);
             if (!romName.empty())
                 next += " | " + romName;
+            if (callbacks.executionSettings && callbacks.executionSettings().cpuOverclockEnabled)
+                next += " | CPU OVERCLOCK enabled... Games can crash!!";
             if (next != title)
             {
                 SDL_SetWindowTitle(window, next.c_str());
@@ -240,32 +248,34 @@ namespace R2SEGA8::Window
             if (frame.width > limit / 4 || frame.height > limit || frame.pitch > limit || frame.pitch < frame.width * 4)
                 throw std::invalid_argument("Invalid presentation frame dimensions or pitch.");
             const auto settings = callbacks.executionSettings ? callbacks.executionSettings() : Common::ExecutionSettings{};
+            const unsigned crop = settings.cropLeftEnabled && frame.width > 8 && nativeSize.width > 8 ? 8 : 0;
+            const unsigned width = frame.width - crop;
             const bool pixelArt = settings.pixelArtEnabled;
             const bool bilinear = settings.bilinearFilterEnabled && !pixelArt;
-            if (!videoTexture || videoWidth != frame.width || videoHeight != frame.height)
+            if (!videoTexture || videoWidth != width || videoHeight != frame.height)
             {
                 if (videoTexture)
                     SDL_DestroyTexture(videoTexture);
                 videoTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
-                                                 static_cast<int>(frame.width), static_cast<int>(frame.height));
+                                                 static_cast<int>(width), static_cast<int>(frame.height));
                 if (!videoTexture)
                     throw std::runtime_error(SDL_GetError());
-                videoWidth = frame.width;
+                videoWidth = width;
                 videoHeight = frame.height;
                 if (!SDL_SetTextureScaleMode(videoTexture, pixelArt ? SDL_SCALEMODE_PIXELART : bilinear ? SDL_SCALEMODE_LINEAR
                                                                                                         : SDL_SCALEMODE_NEAREST))
                     throw std::runtime_error(SDL_GetError());
             }
-            const auto *pixels = frame.rgba;
+            const auto *pixels = frame.rgba + crop * 4;
             int pitch = static_cast<int>(frame.pitch);
             if (settings.scanlinesEnabled)
             {
-                const auto rowBytes = static_cast<std::size_t>(frame.width) * 4;
+                const auto rowBytes = static_cast<std::size_t>(width) * 4;
                 scanlinePixels.resize(rowBytes * frame.height);
                 const auto level = std::clamp(settings.scanlineLevel, 5u, 25u);
                 for (unsigned y = 0; y < frame.height; ++y)
                 {
-                    const auto *source = frame.rgba + static_cast<std::size_t>(y) * frame.pitch;
+                    const auto *source = frame.rgba + static_cast<std::size_t>(y) * frame.pitch + crop * 4;
                     auto *destination = scanlinePixels.data() + static_cast<std::size_t>(y) * rowBytes;
                     std::copy_n(source, rowBytes, destination);
                     if (y % 2 != 0)
@@ -279,8 +289,9 @@ namespace R2SEGA8::Window
             if (!SDL_UpdateTexture(videoTexture, nullptr, pixels, pitch))
                 throw std::runtime_error(SDL_GetError());
             const auto available = ImGui::GetContentRegionAvail();
-            const float scale = std::min(available.x / nativeSize.width, available.y / nativeSize.height);
-            const ImVec2 size = fullscreen == Fullscreen::Stretched ? available : ImVec2(nativeSize.width * scale, nativeSize.height * scale);
+            const auto visibleWidth = displayWidth();
+            const float scale = std::min(available.x / visibleWidth, available.y / nativeSize.height);
+            const ImVec2 size = fullscreen == Fullscreen::Stretched ? available : ImVec2(visibleWidth * scale, nativeSize.height * scale);
             if (scale > 0)
             {
                 // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
@@ -478,6 +489,13 @@ namespace R2SEGA8::Window
                 state.setFullscreen(Impl::Fullscreen::None);
                 continue;
             }
+            if (ownEvent && state.focused && !state.minimized && !state.files.isOpen() && event.type == SDL_EVENT_KEY_DOWN &&
+                !event.key.repeat && event.key.key == SDLK_F && (event.key.mod & SDL_KMOD_CTRL) &&
+                !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)))
+            {
+                state.setFullscreen(state.fullscreen == Impl::Fullscreen::None ? Impl::Fullscreen::Aspect : Impl::Fullscreen::None);
+                continue;
+            }
             if (ownEvent && state.fullscreen == Impl::Fullscreen::None && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.mod & SDL_KMOD_CTRL) &&
                 !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI)) && event.key.key >= SDLK_1 && event.key.key <= SDLK_5)
                 state.resizeDisplay(static_cast<unsigned>(event.key.key - SDLK_1 + 1));
@@ -569,6 +587,20 @@ namespace R2SEGA8::Window
                 {
                     const bool configurable = state.callbacks.executionSettings && state.callbacks.setExecutionSettings;
                     auto settings = configurable ? state.callbacks.executionSettings() : Common::ExecutionSettings{};
+                    if (ImGui::BeginMenu("Console Profile", configurable &&
+                                                                (!state.callbacks.consoleProfileAvailable || state.callbacks.consoleProfileAvailable())))
+                    {
+                        for (const auto &option : {std::pair<const char *, Common::ConsoleProfile>{"Auto", Common::ConsoleProfile::Auto},
+                                                   {"NTSC", Common::ConsoleProfile::NTSC},
+                                                   {"PAL", Common::ConsoleProfile::PAL}})
+                            if (ImGui::MenuItem(option.first, nullptr, settings.consoleProfile == option.second))
+                            {
+                                settings.consoleProfile = option.second;
+                                state.callbacks.setExecutionSettings(settings);
+                            }
+                        ImGui::EndMenu();
+                    }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
                         state.callbacks.setExecutionSettings(settings);
                     ImGui::Separator();
@@ -611,13 +643,19 @@ namespace R2SEGA8::Window
                     ImGui::Separator();
                     if (ImGui::MenuItem("Borderless Fullscreen Stretched"))
                         state.pendingFullscreen = Impl::Fullscreen::Stretched;
-                    if (ImGui::MenuItem("Borderless Fullscreen"))
+                    if (ImGui::MenuItem("Borderless Fullscreen", "Ctrl+F"))
                         state.pendingFullscreen = Impl::Fullscreen::Aspect;
                     ImGui::Separator();
                     if (ImGui::MenuItem("Render sprites", nullptr, &settings.renderSprites, configurable))
                         state.callbacks.setExecutionSettings(settings);
                     if (ImGui::MenuItem("Render tiles", nullptr, &settings.renderTiles, configurable))
                         state.callbacks.setExecutionSettings(settings);
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Crop 8px from Left", nullptr, &settings.cropLeftEnabled, configurable))
+                    {
+                        state.callbacks.setExecutionSettings(settings);
+                        state.pendingDisplayScale = state.displayScale;
+                    }
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("Audio", state.callbacks.audioSettings && state.callbacks.setAudioSettings))
@@ -682,6 +720,14 @@ namespace R2SEGA8::Window
                     ImGui::Separator();
                     if (ImGui::MenuItem("Enable Unlimited Sprites", nullptr, &settings.unlimitedSpritesEnabled))
                         state.callbacks.setExecutionSettings(settings);
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Enable CPU Overclock", nullptr, &settings.cpuOverclockEnabled))
+                        state.callbacks.setExecutionSettings(settings);
+                    ImGui::BeginDisabled(!settings.cpuOverclockEnabled);
+                    ImGui::SetNextItemWidth(150.0f);
+                    if (ImGui::SliderFloat("CPU Multiplier", &settings.cpuMultiplier, 1.0f, 2.0f, "%.2fx"))
+                        state.callbacks.setExecutionSettings(settings);
+                    ImGui::EndDisabled();
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenuBar();
