@@ -69,7 +69,8 @@ namespace R2SEGA8::Core
 
     private:
         Core::TMS9918 vdp_;
-        Core::SN76489 psg_;
+        // O estado elétrico inicial do AN é indefinido; a placa adota canais silenciados.
+        Core::SN76489 psg_{Core::SN76489::DefaultClock, Core::SN76489::DefaultSampleRate, Core::SN76489::Variant::TI, true};
         Core::IO::ControllerInput controls_;
     };
 }

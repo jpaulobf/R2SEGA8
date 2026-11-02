@@ -137,6 +137,8 @@ namespace R2SEGA8::Core
 
     void SG1000::clock(const Core::Z80Pins &)
     {
+        if (!peripheralClockDue())
+            return;
         // O cristal é dividido por três para a CPU e por dois para os pixels do VDP.
         vdp_.runMasterTicks(3);
         // PSG e CPU recebem o mesmo clock; WAIT não interrompe os periféricos.
