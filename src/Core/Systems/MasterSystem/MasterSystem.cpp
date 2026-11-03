@@ -1,9 +1,82 @@
 #include "MasterSystem.h"
+#include "Common/Hash.h"
+#include "Core/State/StateArchive.h"
+#include <memory>
 #include <stdexcept>
 #include <utility>
 
 namespace R2SEGA8::Core
 {
+    std::vector<std::uint8_t> MasterSystem::saveState() const
+    {
+        std::vector<std::uint8_t> data;
+        StateArchive ar(data);
+        std::uint32_t magic = 0x31534d53, version = 1;
+        bool pal = pal_, hasCartRam = !cartridge_.ram().empty();
+        std::uint64_t hash = Common::fnv1a64(cartridge_.rom()), size = cartridge_.rom().size();
+        auto cpuState = cpu().snapshot();
+        auto video = std::make_unique<SegaVDP::Snapshot>();
+        vdp_.snapshot(*video);
+        auto audio = psg_.snapshot();
+        auto ram = ram_, cartRam = cartridge_.ram();
+        auto banks = banks_;
+        auto mapper = mapperControl_;
+        auto buttons = controls_.buttons();
+        auto frame = controls_.frame();
+        ar(magic, version, pal, hash, size, hasCartRam);
+        cpuState.stateArchive(ar);
+        video->stateArchive(ar);
+        audio.stateArchive(ar);
+        ar(ram, cartRam, banks, mapper, buttons, frame);
+        auto checksum = Common::fnv1a64(data);
+        ar(checksum);
+        return data;
+    }
+
+    void MasterSystem::loadState(const std::vector<std::uint8_t> &data)
+    {
+        if (data.size() < sizeof(std::uint64_t))
+            throw std::runtime_error("Truncated save state.");
+        const auto payloadSize = data.size() - sizeof(std::uint64_t);
+        std::uint64_t checksum = 0;
+        for (unsigned i = 0; i < 8; ++i)
+            checksum |= static_cast<std::uint64_t>(data[payloadSize + i]) << (i * 8);
+        if (checksum != Common::fnv1a64(data.data(), payloadSize))
+            throw std::runtime_error("Save state checksum mismatch.");
+        StateArchive ar(data, payloadSize);
+        std::uint32_t magic = 0, version = 0;
+        bool pal = false, hasCartRam = false;
+        std::uint64_t hash = 0, size = 0;
+        ar(magic, version, pal, hash, size, hasCartRam);
+        if (magic != 0x31534d53 || version != 1 || pal != pal_ ||
+            hash != Common::fnv1a64(cartridge_.rom()) || size != cartridge_.rom().size())
+            throw std::runtime_error("Save state is incompatible with this system, ROM or console profile.");
+        auto cpuState = cpu().snapshot();
+        auto video = std::make_unique<SegaVDP::Snapshot>();
+        auto audio = psg_.snapshot();
+        auto ram = ram_;
+        std::vector<std::uint8_t> cartRam(hasCartRam ? 0x8000 : 0);
+        std::array<std::uint8_t, 3> banks{};
+        std::uint8_t mapper = 0;
+        Common::InputState buttons{};
+        std::uint64_t frame = 0;
+        cpuState.stateArchive(ar);
+        video->stateArchive(ar);
+        audio.stateArchive(ar);
+        ar(ram, cartRam, banks, mapper, buttons, frame);
+        ar.finish();
+        if ((mapper & 0x08) && !hasCartRam)
+            throw std::runtime_error("Invalid save state cartridge RAM.");
+        cpu().restore(cpuState);
+        vdp_.restore(*video);
+        psg_.restore(audio);
+        ram_ = std::move(ram);
+        cartridge_.ram() = std::move(cartRam);
+        banks_ = banks;
+        mapperControl_ = mapper;
+        controls_.setInput(buttons, frame);
+    }
+
     MasterSystem::MasterSystem(Core::Cartridge cartridge, bool pal)
         : Board(Common::SystemType::MasterSystem, std::move(cartridge), 8 * 1024), pal_(pal), vdp_(pal),
           psg_(pal ? 3546893 : 3579545, SN76489::DefaultSampleRate, SN76489::Variant::Sega)

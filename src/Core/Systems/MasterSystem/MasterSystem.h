@@ -15,6 +15,9 @@ namespace R2SEGA8::Core
         explicit MasterSystem(Core::Cartridge cartridge, bool pal = false);
 
         bool hasMemoryMap() const override { return true; }
+        bool supportsSaveState() const override { return true; }
+        std::vector<std::uint8_t> saveState() const override;
+        void loadState(const std::vector<std::uint8_t> &data) override;
         unsigned clockFrequency() const override { return pal_ ? 3546893 : 3579545; }
         unsigned cyclesPerFrame() const override { return SegaVDP::DotsPerLine * 2 * vdp_.linesPerFrame() / 3; }
         std::optional<Common::ConsoleProfile> consoleProfile() const override
