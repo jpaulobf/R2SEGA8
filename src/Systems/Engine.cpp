@@ -2,6 +2,7 @@
 #include "Audio.h"
 #include "BoardFactory.h"
 #include "Core/Audio/SN76489/SN76489.h"
+#include "Core/CPU/Z80/Disassembler.h"
 #include "FrameCounter.h"
 #include "FramePacer.h"
 #include "Input.h"
@@ -17,6 +18,8 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <set>
+#include <cmath>
 #include <utility>
 
 namespace
@@ -83,6 +86,8 @@ int R2SEGA8::Systems::Engine::run()
         R2SEGA8::Systems::PauseState pause;
         bool emulationPaused = false;
         bool rewinding = false;
+        bool debugActive = false, debugPaused = false, debugPauseRequested = false, debugSkipBreakpoint = false;
+        std::set<std::uint16_t> breakpoints;
         auto pauseStarted = Clock::now();
         // Uma nova máquina não herda o tempo de pausa usado na medição da máquina anterior.
         const auto resetFPS = [&]()
@@ -104,6 +109,7 @@ int R2SEGA8::Systems::Engine::run()
         const auto publishBoard = [&](std::unique_ptr<R2SEGA8::Core::Board> next)
         {
             board = std::move(next);
+            debugPaused = debugPauseRequested = debugSkipBreakpoint = false;
             rewind.clear();
             input.clear();
             resetAudio = resetTiming = true;
@@ -123,6 +129,34 @@ int R2SEGA8::Systems::Engine::run()
             const auto &rom = board->cartridge().rom();
             const auto &ram = board->ram();
             return {{rom.data(), rom.size()}, {ram.data(), ram.size()}};
+        };
+        callbacks.debugOpen = [&]() { debugActive = true; };
+        callbacks.debugClose = [&]() { debugActive = debugPaused = debugPauseRequested = debugSkipBreakpoint = false; resetAudio = resetTiming = true; };
+        callbacks.debugView = [&]() -> R2SEGA8::Window::DebugView {
+            if (!board || !board->hasMemoryMap()) return {};
+            return {true, debugPaused, board->cpu().state()};
+        };
+        callbacks.debugRead = [&](std::uint16_t address) -> std::uint8_t { return board && board->hasMemoryMap() ? board->readMemory(address) : 0xff; };
+        callbacks.debugHasBreakpoint = [&](std::uint16_t address) { return breakpoints.count(address) != 0; };
+        callbacks.debugBreakpoint = [&](std::uint16_t address) { if (!breakpoints.erase(address)) breakpoints.insert(address); };
+        callbacks.debugClearBreakpoints = [&]() { breakpoints.clear(); };
+        callbacks.debugPause = [&](bool value) {
+            if (value) debugPauseRequested = true;
+            else { debugPaused = debugPauseRequested = false; debugSkipBreakpoint = true; resetAudio = resetTiming = true; }
+        };
+        callbacks.debugStep = [&]() {
+            if (!debugPaused || !board || !board->hasMemoryMap()) return;
+            const auto before = board->cpu().state();
+            const auto d = R2SEGA8::Core::disassemble(before.pc, [&](std::uint16_t address) { return board->readMemory(address); });
+            std::printf("%04X  %-20s %-24s AF=%02X%02X BC=%02X%02X DE=%02X%02X HL=%02X%02X IX=%04X IY=%04X SP=%04X CYC=%llu\n",
+                        before.pc, d.bytes.c_str(), d.text.c_str(), before.a, before.f, before.b, before.c, before.d, before.e, before.h, before.l,
+                        before.ix, before.iy, before.sp, static_cast<unsigned long long>(before.cycles));
+            std::fflush(stdout);
+            // Bound WAIT/BUSREQ so an external line cannot freeze the interface.
+            unsigned ticks = 0;
+            do { board->cpu().tick(); ++ticks; } while (!board->cpu().instructionBoundary() && ticks < 1000000);
+            if (!board->cpu().instructionBoundary()) std::cerr << "Debugger: instruction did not finish within 1000000 T-states.\n";
+            rewind.clear(); resetAudio = resetTiming = true;
         };
         callbacks.exit = [&]()
         { running = false; };
@@ -257,7 +291,7 @@ int R2SEGA8::Systems::Engine::run()
         // Apenas mudanças da pausa efetiva descartam áudio e prazos; fechar menu não desfaz Pause/Break.
         const auto synchronizePause = [&]()
         {
-            const bool next = pause.paused();
+            const bool next = pause.paused() || debugPaused;
             if (next == emulationPaused)
                 return;
             const auto now = Clock::now();
@@ -384,7 +418,33 @@ int R2SEGA8::Systems::Engine::run()
                             if (rewind.captureDue())
                                 rewind.push(board->saveState());
                         }
-                        board->runCycles(board->cyclesPerFrame());
+                        if (!debugActive || (breakpoints.empty() && !debugPauseRequested))
+                        {
+                            board->runCycles(board->cyclesPerFrame());
+                            debugSkipBreakpoint = false;
+                        }
+                        else
+                        {
+                            const unsigned multiplier = executionSettings.cpuOverclockEnabled ?
+                                static_cast<unsigned>(std::lround(std::clamp(executionSettings.cpuMultiplier, 1.0f, 2.0f) * 100)) : 100;
+                            const auto phase = ((board->cpu().state().cycles % multiplier) * 100) % multiplier;
+                            const auto cycles = (static_cast<std::uint64_t>(board->cyclesPerFrame()) * multiplier + 99 - phase) / 100;
+                            for (std::uint64_t i = 0; i < cycles; ++i)
+                            {
+                                auto &cpu = board->cpu();
+                                if (cpu.instructionBoundary())
+                                {
+                                    if (debugPauseRequested || (!debugSkipBreakpoint && breakpoints.count(cpu.state().pc)))
+                                    {
+                                        debugPaused = true; debugPauseRequested = false; resetAudio = resetTiming = true;
+                                        break;
+                                    }
+                                    debugSkipBreakpoint = false;
+                                }
+                                cpu.tick();
+                            }
+                        }
+                        if (debugPaused) { synchronizePause(); break; }
                         frameCounter.record(Clock::now());
                         board->takeAudio(audioSamples);
                         // O PSG continua avançando no fast-forward; apenas a saída PCM é descartada.
