@@ -115,6 +115,40 @@ namespace
               "SMS respects master mute");
     }
 
+    void videoStartup(const std::filesystem::path &path)
+    {
+        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto reg = [&](unsigned index, unsigned value)
+        {
+            board->output(0xbf, static_cast<std::uint8_t>(value));
+            board->output(0xbf, static_cast<std::uint8_t>(0x80 | index));
+        };
+        auto write = [&](unsigned address, unsigned code, std::initializer_list<std::uint8_t> bytes)
+        {
+            board->output(0xbf, static_cast<std::uint8_t>(address));
+            board->output(0xbf, static_cast<std::uint8_t>((code << 6) | (address >> 8)));
+            for (auto byte : bytes)
+                board->output(0xbe, byte);
+        };
+        reg(0, 4);
+        reg(1, 0x40);
+        reg(2, 0x0f);
+        // Tile 257 requires address bits controlled by both R3 and R4.
+        write(0x2020, 1, {0x80, 0, 0x80, 0});
+        write(0x3800, 1, {1, 1});
+        write(5, 3, {3});
+        board->runCycles(board->cyclesPerFrame());
+        const auto *pixel = board->videoFrame().rgba;
+        check(pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 0,
+              "SMS startup must allow tiles to use all pattern address bits");
+        reg(3, 0);
+        reg(4, 0);
+        board->runCycles(board->cyclesPerFrame());
+        pixel = board->videoFrame().rgba;
+        check(pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0,
+              "Games must still be able to program SMS1 pattern masks");
+    }
+
     void turbo(const std::filesystem::path &path)
     {
         auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
@@ -141,6 +175,7 @@ int main()
         Fixture fixture;
         controls(fixture.path);
         audio(fixture.path);
+        videoStartup(fixture.path);
         turbo(fixture.path);
         std::cout << "Master System controller ports, CPU, Pause NMI and turbo passed.\n";
         return 0;
