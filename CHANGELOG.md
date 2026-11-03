@@ -2,6 +2,14 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
+## v0.2.7
+
+- Save State e Load State também disponíveis para Master System, com os mesmos
+  três slots e atalhos F5/F6. O estado exige a mesma ROM e perfil NTSC/PAL.
+- Save State e Load State também disponíveis para Master System, com os mesmos
+  três slots e atalhos F5/F6. O estado exige a mesma ROM e perfil NTSC/PAL.
+
+
 ## v0.2.5
 
 - Display > Console Profile oferece Auto, NTSC e PAL para o Master System.

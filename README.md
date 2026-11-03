@@ -26,6 +26,16 @@ closing it resumes only if you did not pause manually.
 The extension selects the system: `.sg`, `.sc`, `.sms` or `.gg` (case-insensitive).
 ZIP loading and automatic identification of `.bin` files will come later.
 
+For SG-1000 and Master System, use **File > Save State** (**F5**) and
+**File > Load State** (**F6**). Select one of three per-ROM slots in
+**File > Save State Slot**. Master System states require the same NTSC/PAL
+console profile used when saving.
+
+For SG-1000 and Master System, use **File > Save State** (**F5**) and
+**File > Load State** (**F6**). Select one of three per-ROM slots in
+**File > Save State Slot**. Master System states require the same NTSC/PAL
+console profile used when saving.
+
 ## Display
 
 Starts at **3X**. Choose **1X–5X** in **Display**, or press **Ctrl+1–5**.
