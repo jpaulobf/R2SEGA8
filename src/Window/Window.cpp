@@ -1,5 +1,6 @@
 #include "Window.h"
 #include "FileManager.h"
+#include "DebugWindow.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -29,6 +30,7 @@ namespace R2SEGA8::Window
     {
         Callbacks callbacks;
         FileManager files;
+        std::unique_ptr<DebugWindow> debugger;
         SDL_Window *window = nullptr;
         SDL_Renderer *renderer = nullptr;
         SDL_Texture *videoTexture = nullptr;
@@ -319,6 +321,7 @@ namespace R2SEGA8::Window
         // Libera somente os recursos cuja inicialização foi concluída.
         ~Impl()
         {
+            debugger.reset();
 #ifdef _WIN32
             if (resizeHook)
                 RemoveWindowSubclass(nativeWindow, fixedWindowProc, 1);
@@ -398,6 +401,7 @@ namespace R2SEGA8::Window
         ImGui::EndFrame();
         state.resizeDisplay(state.displayScale);
         state.updateTitle();
+        state.debugger = std::make_unique<DebugWindow>(state.callbacks, state.window);
     }
 
     void Window::requestOpen(const std::filesystem::path &path)
@@ -432,6 +436,8 @@ namespace R2SEGA8::Window
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
+            if (state.debugger && state.debugger->processEvent(event))
+                continue;
             ImGui_ImplSDL3_ProcessEvent(&event);
             const auto ownID = SDL_GetWindowID(state.window);
             const bool windowEvent = event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST;
@@ -460,6 +466,9 @@ namespace R2SEGA8::Window
                 }
                 if (event.type == SDL_EVENT_WINDOW_RESIZED)
                     state.enforceDisplaySize();
+                if (state.debugger && (event.type == SDL_EVENT_WINDOW_MOVED || event.type == SDL_EVENT_WINDOW_RESIZED ||
+                                       event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED))
+                    state.debugger->snapToParent();
                 if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED && !state.maximized && state.fullscreen == Impl::Fullscreen::None)
                     state.resizeDisplay(state.displayScale);
             }
@@ -521,6 +530,8 @@ namespace R2SEGA8::Window
         {
             state.minimized = true;
             state.notifyInput();
+            if (state.debugger)
+                state.debugger->render();
             return;
         }
         ImGui_ImplSDLRenderer3_NewFrame();
@@ -697,6 +708,21 @@ namespace R2SEGA8::Window
                     }
                     ImGui::EndMenu();
                 }
+                if (ImGui::BeginMenu("Debug"))
+                {
+                    if (ImGui::MenuItem("Disassembler", nullptr, state.debugger && state.debugger->isOpen()))
+                    {
+                        if (state.debugger->isOpen())
+                            state.debugger->close();
+                        else
+                        {
+                            state.debugger->open();
+                            if (state.callbacks.debugOpen)
+                                state.callbacks.debugOpen();
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
                 if (ImGui::BeginMenu("Hacks", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
                 {
                     auto settings = state.callbacks.executionSettings();
@@ -748,6 +774,8 @@ namespace R2SEGA8::Window
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), state.renderer);
         if (!SDL_RenderPresent(state.renderer))
             throw std::runtime_error(SDL_GetError());
+        if (state.debugger)
+            state.debugger->render();
         // Aplica ações do menu depois de apresentar o quadro com a geometria usada durante seu desenho.
         if (state.pendingDisplayScale)
         {
