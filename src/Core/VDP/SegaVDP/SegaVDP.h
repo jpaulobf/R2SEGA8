@@ -28,6 +28,41 @@ namespace R2SEGA8::Core
             std::uint8_t lineCounter = 0;
             bool lineInterruptPending = false, frameInterruptPending = false;
             std::uint64_t completedFrames = 0;
+            template <class Archive> void stateArchive(Archive &ar)
+            {
+                ar(vram, cram, registers, address, code, readBuffer, status, secondControlByte, dot, line,
+                   masterPhase, drawingImage, horizontalScroll, verticalScroll, lineCounter,
+                   lineInterruptPending, frameInterruptPending, completedFrames);
+            }
+        };
+
+        struct SpriteLine
+        {
+            int x = 0;
+            std::array<std::uint8_t, 4> planes{};
+            bool doubleWidth = false;
+            template <class Archive> void state(Archive &ar) { ar(x, planes, doubleWidth); }
+        };
+        struct SelectedSprite
+        {
+            std::uint8_t index = 0, row = 0;
+            template <class Archive> void state(Archive &ar) { ar(index, row); }
+        };
+        struct Snapshot
+        {
+            State chip;
+            std::array<SelectedSprite, 64> selectedSprites{};
+            unsigned selectedSpriteCount = 0;
+            bool selectedSpriteOverflow = false, spriteSelectionValid = false;
+            std::array<SpriteLine, 64> sprites{};
+            unsigned spriteCount = 0, hardwareSpriteCount = 0;
+            std::array<std::array<std::uint8_t, FrameBytes>, 2> images{};
+            template <class Archive> void stateArchive(Archive &ar)
+            {
+                chip.stateArchive(ar);
+                ar(selectedSprites, selectedSpriteCount, selectedSpriteOverflow, spriteSelectionValid,
+                   sprites, spriteCount, hardwareSpriteCount, images);
+            }
         };
 
         explicit SegaVDP(bool pal = false) : pal_(pal) {}
@@ -59,22 +94,14 @@ namespace R2SEGA8::Core
 
         // Permite validar a interface sem alterar latches ou memórias.
         const State &state() const { return state_; }
+        void snapshot(Snapshot &snapshot) const;
+        void restore(const Snapshot &snapshot);
 
     private:
         // HClock -18, em relação ao início dos 256 pixels ativos.
         static constexpr unsigned HBlankEventDot = DotsPerLine - 18;
         bool pal_ = false;
         State state_{};
-        struct SpriteLine
-        {
-            int x = 0;
-            std::array<std::uint8_t, 4> planes{};
-            bool doubleWidth = false;
-        };
-        struct SelectedSprite
-        {
-            std::uint8_t index = 0, row = 0;
-        };
         std::array<SelectedSprite, 64> selectedSprites_{};
         unsigned selectedSpriteCount_ = 0;
         bool selectedSpriteOverflow_ = false, spriteSelectionValid_ = false;

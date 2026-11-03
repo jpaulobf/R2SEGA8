@@ -1,7 +1,45 @@
 #include "SegaVDP.h"
+#include <stdexcept>
 
 namespace R2SEGA8::Core
 {
+    void SegaVDP::snapshot(Snapshot &s) const
+    {
+        s.chip = state_;
+        s.selectedSprites = selectedSprites_;
+        s.selectedSpriteCount = selectedSpriteCount_;
+        s.selectedSpriteOverflow = selectedSpriteOverflow_;
+        s.spriteSelectionValid = spriteSelectionValid_;
+        s.sprites = sprites_;
+        s.spriteCount = spriteCount_;
+        s.hardwareSpriteCount = hardwareSpriteCount_;
+        s.images = images_;
+    }
+
+    void SegaVDP::restore(const Snapshot &s)
+    {
+        if (s.chip.address >= 0x4000 || s.chip.code > 3 || s.chip.dot >= DotsPerLine ||
+            s.chip.line >= linesPerFrame() || s.chip.masterPhase > 1 || s.chip.drawingImage > 1 ||
+            s.selectedSpriteCount > 64 || s.spriteCount > 64 || s.hardwareSpriteCount > 8 ||
+            s.hardwareSpriteCount > s.spriteCount)
+            throw std::invalid_argument("Invalid Sega VDP state.");
+        for (const auto &sprite : s.selectedSprites)
+            if (sprite.index >= 64 || sprite.row >= 32)
+                throw std::invalid_argument("Invalid Sega VDP sprite selection.");
+        for (const auto &sprite : s.sprites)
+            if (sprite.x < -8 || sprite.x > 255)
+                throw std::invalid_argument("Invalid Sega VDP sprite position.");
+        state_ = s.chip;
+        selectedSprites_ = s.selectedSprites;
+        selectedSpriteCount_ = s.selectedSpriteCount;
+        selectedSpriteOverflow_ = s.selectedSpriteOverflow;
+        spriteSelectionValid_ = s.spriteSelectionValid;
+        sprites_ = s.sprites;
+        spriteCount_ = s.spriteCount;
+        hardwareSpriteCount_ = s.hardwareSpriteCount;
+        images_ = s.images;
+    }
+
     void SegaVDP::selectSprites(unsigned line)
     {
         selectedSpriteCount_ = 0;
