@@ -30,7 +30,7 @@ namespace R2SEGA8::Window
             }
             ImGui::EndChild();
         }
-    } // namespace
+    }
 
     void MemoryInspector::draw(MemoryView memory)
     {

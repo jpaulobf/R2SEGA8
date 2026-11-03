@@ -28,7 +28,8 @@ namespace R2SEGA8::Core
             std::uint8_t lineCounter = 0;
             bool lineInterruptPending = false, frameInterruptPending = false;
             std::uint64_t completedFrames = 0;
-            template <class Archive> void stateArchive(Archive &ar)
+            template <class Archive>
+            void stateArchive(Archive &ar)
             {
                 ar(vram, cram, registers, address, code, readBuffer, status, secondControlByte, dot, line,
                    masterPhase, drawingImage, horizontalScroll, verticalScroll, lineCounter,
@@ -41,12 +42,14 @@ namespace R2SEGA8::Core
             int x = 0;
             std::array<std::uint8_t, 4> planes{};
             bool doubleWidth = false;
-            template <class Archive> void state(Archive &ar) { ar(x, planes, doubleWidth); }
+            template <class Archive>
+            void state(Archive &ar) { ar(x, planes, doubleWidth); }
         };
         struct SelectedSprite
         {
             std::uint8_t index = 0, row = 0;
-            template <class Archive> void state(Archive &ar) { ar(index, row); }
+            template <class Archive>
+            void state(Archive &ar) { ar(index, row); }
         };
         struct Snapshot
         {
@@ -57,7 +60,8 @@ namespace R2SEGA8::Core
             std::array<SpriteLine, 64> sprites{};
             unsigned spriteCount = 0, hardwareSpriteCount = 0;
             std::array<std::array<std::uint8_t, FrameBytes>, 2> images{};
-            template <class Archive> void stateArchive(Archive &ar)
+            template <class Archive>
+            void stateArchive(Archive &ar)
             {
                 chip.stateArchive(ar);
                 ar(selectedSprites, selectedSpriteCount, selectedSpriteOverflow, spriteSelectionValid,
