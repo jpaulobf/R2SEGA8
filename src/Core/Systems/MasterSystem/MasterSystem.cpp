@@ -21,6 +21,13 @@ namespace R2SEGA8::Core
         auto initialCPU = cpu().state();
         initialCPU.sp = 0xdff0;
         cpu().setState(initialCPU);
+        // Sem BIOS, escolhemos uma inicialização compatível para os registradores
+        // legados: no VDP SMS1, R3 e R4 zerados mascaram os endereços dos tiles.
+        // Jogos continuam livres para reprogramá-los e usar essas máscaras.
+        vdp_.writeControl(0xff);
+        vdp_.writeControl(0x83);
+        vdp_.writeControl(0xff);
+        vdp_.writeControl(0x84);
     }
 
     std::uint8_t MasterSystem::readMemory(std::uint16_t address) const
