@@ -1,4 +1,5 @@
 #include "Core/Systems/SG1000/SG1000.h"
+#include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "Systems/SaveStateStore.h"
 #include <chrono>
 #include <filesystem>
@@ -76,6 +77,17 @@ int main()
             rejected = true;
         }
         check(rejected, "Invalid slots must be rejected");
+        Core::MasterSystem sms{Core::Cartridge(fixture.rom("game.sms", '\x76'))};
+        for (unsigned slot = 1; slot <= 3; ++slot)
+        {
+            sms.writeMemory(0xc000, static_cast<std::uint8_t>(slot));
+            store.save(sms, slot);
+        }
+        for (unsigned slot = 1; slot <= 3; ++slot)
+        {
+            sms.loadState(store.load(sms, slot));
+            check(sms.readMemory(0xc000) == slot, "Master System slots must preserve independent states");
+        }
         std::cout << "Save state store tests passed\n";
     }
     catch (const std::exception &error)
