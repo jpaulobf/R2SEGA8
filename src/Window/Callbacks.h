@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/AudioSettings.h"
+#include "Core/CPU/Z80/Z80.h"
 #include "Common/ExecutionSettings.h"
 #include "Common/SystemType.h"
 #include <cstddef>
@@ -31,6 +32,12 @@ namespace R2SEGA8::Window
         const std::uint8_t *rgba = nullptr;
         unsigned width = 0, height = 0;
         std::size_t pitch = 0;
+    };
+
+    struct DebugView
+    {
+        bool available = false, paused = false;
+        Core::Z80::State cpu{};
     };
 
     // Contrato da interface: ações e consultas são atendidas pelo chamador.
@@ -94,6 +101,13 @@ namespace R2SEGA8::Window
 
         // Notifica foco/captura/diálogos, inclusive quando não há eventos ou um menu abre durante render.
         std::function<void(bool)> inputAvailability;
+
+        std::function<DebugView()> debugView;
+        std::function<std::uint8_t(std::uint16_t)> debugRead;
+        std::function<bool(std::uint16_t)> debugHasBreakpoint;
+        std::function<void(std::uint16_t)> debugBreakpoint;
+        std::function<void()> debugClearBreakpoints, debugStep, debugOpen, debugClose;
+        std::function<void(bool)> debugPause;
 
         // Notifica o pedido de encerramento pelo menu, pela janela ou pelo sistema operacional.
         std::function<void()> exit;
