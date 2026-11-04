@@ -18,7 +18,7 @@ namespace R2SEGA8::Systems
             return false;
         initialized_ = true;
         sampleRate_ = sampleRate;
-        const SDL_AudioSpec spec{SDL_AUDIO_F32, 1, static_cast<int>(sampleRate)};
+        const SDL_AudioSpec spec{SDL_AUDIO_F32, 2, static_cast<int>(sampleRate)};
         stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
         if (!stream_)
         {
@@ -44,7 +44,7 @@ namespace R2SEGA8::Systems
     std::size_t Audio::queuedSamples() const
     {
         const int bytes = stream_ ? SDL_GetAudioStreamQueued(stream_) : 0;
-        return bytes > 0 ? static_cast<std::size_t>(bytes) / sizeof(float) : 0;
+        return bytes > 0 ? static_cast<std::size_t>(bytes) / (2 * sizeof(float)) : 0;
     }
 
     bool Audio::clear()
@@ -57,29 +57,40 @@ namespace R2SEGA8::Systems
         return paused && cleared;
     }
 
-    bool Audio::submit(const float *samples, std::size_t count)
+    bool Audio::submit(const float *samples, std::size_t count, unsigned channels)
     {
         if (!stream_ || !count)
             return true;
         if (!samples)
             return SDL_SetError("Missing audio sample data.");
+        if ((channels != 1 && channels != 2) || count % channels != 0)
+            return SDL_SetError("Invalid audio channel count or incomplete frame.");
+        std::size_t frames = count / channels;
         const int bytes = SDL_GetAudioStreamQueued(stream_);
         if (bytes < 0)
             return false;
-        const std::size_t queued = static_cast<std::size_t>(bytes) / sizeof(float);
+        const std::size_t queued = static_cast<std::size_t>(bytes) / (2 * sizeof(float));
         const std::size_t limit = sampleRate_ * 120 / 1000;
         // Fila de entrada vazia não prova underrun: o dispositivo pode ter consumido um bloco grande.
         // Continua anexando PCM, sem pausar nem inserir outros 40 ms de preparação.
-        if (queued + std::min(count, limit) > limit)
+        if (queued + std::min(frames, limit) > limit)
             if (!clear())
                 return false;
         // Um consumidor atrasado não deve acumular segundos de som antigo.
-        if (count > limit)
+        if (frames > limit)
         {
-            samples += count - limit;
-            count = limit;
+            samples += (frames - limit) * channels;
+            frames = limit;
         }
-        if (!SDL_PutAudioStreamData(stream_, samples, static_cast<int>(count * sizeof(float))))
+        // Duplica cada amostra mono para a saída estéreo sem alterar o volume.
+        if (channels == 1)
+        {
+            stereoBuffer_.resize(frames * 2);
+            for (std::size_t i = 0; i < frames; ++i)
+                stereoBuffer_[i * 2] = stereoBuffer_[i * 2 + 1] = samples[i];
+            samples = stereoBuffer_.data();
+        }
+        if (!SDL_PutAudioStreamData(stream_, samples, static_cast<int>(frames * 2 * sizeof(float))))
             return false;
         if (!playing_ && queuedSamples() >= sampleRate_ * 40 / 1000)
         {
