@@ -525,6 +525,18 @@ namespace R2SEGA8::Window
         auto &state = *impl_;
         if (!state.rendererReady)
             throw std::logic_error("Open the window before rendering.");
+        // A geometria acompanha o console carregado e preserva a escala escolhida.
+        if (state.callbacks.presentationSize)
+        {
+            const auto size = state.callbacks.presentationSize();
+            if (size.first && size.second && (size.first != state.nativeSize.width || size.second != state.nativeSize.height))
+            {
+                state.nativeSize = {size.first, size.second};
+                if (state.fullscreen == Impl::Fullscreen::None && !state.maximized &&
+                    !(SDL_GetWindowFlags(state.window) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED)))
+                    state.resizeDisplay(state.displayScale);
+            }
+        }
         state.updateTitle();
         if (SDL_GetWindowFlags(state.window) & SDL_WINDOW_MINIMIZED)
         {
