@@ -2,7 +2,9 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
-## v0.2.7
+## v0.3.0
+
+- Save State, Load State e Rewind disponíveis para Game Gear, com três slots e atalhos F5/F6.
 
 - Save State e Load State também disponíveis para Master System, com os mesmos
   três slots e atalhos F5/F6. O estado exige a mesma ROM e perfil NTSC/PAL.

@@ -11,6 +11,8 @@ scratch in C++, developed alongside R2NES / R2BOY.
 The project is in early development. SG-1000 emulation is stable for general
 use, with backgrounds, sprites, controllers and PSG audio. Master System
 emulation is experimental, and compatibility is still being improved.
+Game Gear has an initial CPU memory map, Sega cartridge mapper, video, controls
+and stereo PSG audio; compatibility is still being improved.
 
 ## Opening a ROM
 
@@ -26,15 +28,10 @@ closing it resumes only if you did not pause manually.
 The extension selects the system: `.sg`, `.sc`, `.sms` or `.gg` (case-insensitive).
 ZIP loading and automatic identification of `.bin` files will come later.
 
-For SG-1000 and Master System, use **File > Save State** (**F5**) and
-**File > Load State** (**F6**). Select one of three per-ROM slots in
+For SG-1000, Master System and Game Gear, use **File > Save State** (**F5**)
+and **File > Load State** (**F6**). Select one of three per-ROM slots in
 **File > Save State Slot**. Master System states require the same NTSC/PAL
-console profile used when saving.
-
-For SG-1000 and Master System, use **File > Save State** (**F5**) and
-**File > Load State** (**F6**). Select one of three per-ROM slots in
-**File > Save State Slot**. Master System states require the same NTSC/PAL
-console profile used when saving.
+console profile used when saving. Rewind is available for all three systems.
 
 ## Display
 
@@ -51,8 +48,8 @@ The title shows emulated FPS before the ROM filename.
 
 ## Controls
 
-Use **WASD or arrow keys** to move, **J/K** for buttons **1/2**, and **Enter**
-for the SG-1000 Pause/Hold button. **U/I** provide turbo for buttons **1/2**.
+Use **WASD or arrow keys** to move, **K** for button **1**, **J** for button **2**,
+and **Enter** for SG-1000 Pause/Hold or Game Gear Start. **I/U** provide turbo for buttons **1/2**.
 
 SDL-compatible gamepads are detected automatically, including connection and
 removal while running. Two players are supported. See the [input guide](docs/Input.md)

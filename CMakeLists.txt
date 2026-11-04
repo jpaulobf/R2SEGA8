@@ -18,6 +18,7 @@ add_library(r2sega8_core STATIC
     src/Core/VDP/SegaVDP/SegaVDP.cpp
     src/Common/RomFile.cpp
     src/Core/Cartridge/Cartridge.cpp
+    src/Core/Cartridge/SegaMapper.cpp
     src/Core/Board.cpp
     src/Core/Systems/SG1000/SG1000.cpp
     src/Core/Systems/SC3000/SC3000.cpp
@@ -112,6 +113,15 @@ if(BUILD_TESTING)
     add_executable(master_system_state_tests tests/Systems/MasterSystemStateTests.cpp)
     target_link_libraries(master_system_state_tests PRIVATE r2sega8_core)
     add_test(NAME master_system_state_tests COMMAND master_system_state_tests)
+    add_executable(game_gear_state_tests tests/Systems/GameGearStateTests.cpp)
+    target_link_libraries(game_gear_state_tests PRIVATE r2sega8_core)
+    add_test(NAME game_gear_state_tests COMMAND game_gear_state_tests)
+    add_executable(game_gear_audio_tests tests/Systems/GameGearAudioTests.cpp)
+    target_link_libraries(game_gear_audio_tests PRIVATE r2sega8_core)
+    add_test(NAME game_gear_audio_tests COMMAND game_gear_audio_tests)
+    add_executable(game_gear_input_tests tests/Systems/GameGearInputTests.cpp)
+    target_link_libraries(game_gear_input_tests PRIVATE r2sega8_core)
+    add_test(NAME game_gear_input_tests COMMAND game_gear_input_tests)
     add_executable(master_system_input_tests tests/Systems/MasterSystemInputTests.cpp)
     target_link_libraries(master_system_input_tests PRIVATE r2sega8_core)
     add_test(NAME master_system_input_tests COMMAND master_system_input_tests)
