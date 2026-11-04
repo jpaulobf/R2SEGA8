@@ -19,8 +19,8 @@ namespace R2SEGA8::Core
         vdp_.snapshot(*video);
         auto audio = psg_.snapshot();
         auto ram = ram_, cartRam = cartridge_.ram();
-        auto banks = banks_;
-        auto mapper = mapperControl_;
+        auto banks = mapper_.state().banks;
+        auto mapper = mapper_.state().control;
         auto buttons = controls_.buttons();
         auto frame = controls_.frame();
         ar(magic, version, pal, hash, size, hasCartRam);
@@ -72,22 +72,14 @@ namespace R2SEGA8::Core
         psg_.restore(audio);
         ram_ = std::move(ram);
         cartridge_.ram() = std::move(cartRam);
-        banks_ = banks;
-        mapperControl_ = mapper;
+        mapper_.setState({banks, mapper});
         controls_.setInput(buttons, frame);
     }
 
     MasterSystem::MasterSystem(Core::Cartridge cartridge, bool pal)
-        : Board(Common::SystemType::MasterSystem, std::move(cartridge), 8 * 1024), pal_(pal), vdp_(pal),
+        : Board(Common::SystemType::MasterSystem, std::move(cartridge), 8 * 1024), pal_(pal), mapper_(cartridge_), vdp_(pal),
           psg_(pal ? 3546893 : 3579545, SN76489::DefaultSampleRate, SN76489::Variant::Sega)
     {
-        if (cartridge_.profile() != CartridgeProfile::PlainROM || cartridge_.rom().size() > 0x100000)
-            throw std::runtime_error("The Sega mapper profile supports ROMs up to 1 MiB and does not support this cartridge profile.");
-        // Linhas de endereço ausentes espelham bancos em imagens com tamanho potência de dois.
-        std::size_t bankCount = 1;
-        while (bankCount * 0x4000 < cartridge_.rom().size())
-            bankCount *= 2;
-        bankMask_ = bankCount - 1;
         // A execução começa direto no cartucho, sem a BIOS. Alguns jogos fazem
         // CALL/PUSH antes de definir SP e dependem da pilha deixada pela BIOS.
         // Em FFFF, essas escritas atingiriam os registradores do mapeador Sega.
@@ -105,33 +97,12 @@ namespace R2SEGA8::Core
 
     std::uint8_t MasterSystem::readMemory(std::uint16_t address) const
     {
-        if (address >= 0xc000)
-            return ram_[address & 0x1fff];
-        if (address >= 0x8000 && (mapperControl_ & 0x08))
-            return cartridge_.ram()[(mapperControl_ & 0x04 ? 0x4000 : 0) + (address & 0x3fff)];
-        const auto slot = address >> 14;
-        const auto bank = address < 0x0400 ? 0 : (banks_[slot] & bankMask_);
-        const auto offset = bank * 0x4000 + (address & 0x3fff);
-        return offset < cartridge_.rom().size() ? cartridge_.rom()[offset] : 0xff;
+        return mapper_.read(cartridge_, ram_, address);
     }
 
     void MasterSystem::writeMemory(std::uint16_t address, std::uint8_t value)
     {
-        if (address >= 0xc000)
-        {
-            ram_[address & 0x1fff] = value;
-            if (address == 0xfffc)
-            {
-                mapperControl_ = value;
-                // Até haver identificação de RAM por cartucho, disponibiliza-se 32 KiB sob demanda.
-                if ((value & 0x08) && cartridge_.ram().empty())
-                    cartridge_.ram().resize(0x8000);
-            }
-            else if (address >= 0xfffd)
-                banks_[address - 0xfffd] = value;
-        }
-        else if (address >= 0x8000 && (mapperControl_ & 0x08))
-            cartridge_.ram()[(mapperControl_ & 0x04 ? 0x4000 : 0) + (address & 0x3fff)] = value;
+        mapper_.write(cartridge_, ram_, address, value);
     }
 
     std::uint8_t MasterSystem::input(std::uint16_t port)
