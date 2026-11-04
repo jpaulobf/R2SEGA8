@@ -43,14 +43,24 @@ namespace R2SEGA8::Core
                    sampleArea, previousInput, previousOutput);
             }
 
+            // A extensão estéreo é serializada somente pelo formato do Game Gear.
+            template <class Archive>
+            void stateArchiveGameGear(Archive &ar)
+            {
+                stateArchive(ar);
+                ar(stereoRouting, stereoArea, stereoPreviousInput, stereoPreviousOutput);
+            }
+
             State state;
             unsigned clockFrequency = 0, sampleRate = 0, samplePhase = 0;
             double sampleArea = 0, previousInput = 0, previousOutput = 0;
+            std::uint8_t stereoRouting = 0xff;
+            std::array<double, 2> stereoArea{}, stereoPreviousInput{}, stereoPreviousOutput{};
         };
 
         // Configura os clocks de entrada e a taxa PCM; exige 0 < sampleRate <= clockFrequency.
         explicit SN76489(unsigned clockFrequency = DefaultClock, unsigned sampleRate = DefaultSampleRate,
-                         Variant variant = Variant::TI, bool initiallyMuted = false);
+                         Variant variant = Variant::TI, bool initiallyMuted = false, bool stereo = false);
 
         // Reinicia chip e amostrador; o estado inicial do AN é configurável pela placa.
         void reset();
@@ -67,6 +77,7 @@ namespace R2SEGA8::Core
         // Consulta registradores e contadores sem alterar o chip; não é um formato de save state.
         const State &state() const { return state_; }
 
+        // Captura o estado do PSG e dos amostradores para restauração.
         Snapshot snapshot() const;
         // Valida antes de alterar o chip; descarta PCM já gerado e mantém as preferências atuais.
         void restore(const Snapshot &snapshot);
@@ -77,8 +88,11 @@ namespace R2SEGA8::Core
         // Consulta a mistura unipolar com ganhos por canal, antes da integração, remoção de DC e Master.
         float level() const { return level_; }
 
-        // Transfere PCM mono float e reutiliza a alocação anterior do consumidor; mantém a fase do amostrador.
+        // Transfere PCM float (mono ou estéreo intercalado L/R); mantém a fase do amostrador.
         void takeSamples(std::vector<float> &destination);
+
+        // Game Gear: bits 0–3 ativam canais à direita; bits 4–7, à esquerda.
+        void setStereoRouting(std::uint8_t routing);
 
         // Ajusta somente a mistura de apresentação; preserva registradores, contadores e LFSR.
         void setAudioSettings(const Common::AudioSettings &settings);
@@ -101,7 +115,10 @@ namespace R2SEGA8::Core
 
         State state_;
         Variant variant_;
-        bool initiallyMuted_;
+        bool initiallyMuted_, stereo_;
+        std::uint8_t stereoRouting_ = 0xff;
+        std::array<float, 2> stereoLevel_{};
+        std::array<double, 2> stereoArea_{}, stereoPreviousInput_{}, stereoPreviousOutput_{};
         Common::AudioSettings audioSettings_;
         unsigned clockFrequency_, sampleRate_, samplePhase_ = 0;
         float level_ = 0, masterGain_ = 1;

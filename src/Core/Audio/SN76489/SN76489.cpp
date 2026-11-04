@@ -5,8 +5,8 @@
 
 namespace R2SEGA8::Core
 {
-    SN76489::SN76489(unsigned clockFrequency, unsigned sampleRate, Variant variant, bool initiallyMuted)
-        : variant_(variant), initiallyMuted_(initiallyMuted), clockFrequency_(clockFrequency), sampleRate_(sampleRate)
+    SN76489::SN76489(unsigned clockFrequency, unsigned sampleRate, Variant variant, bool initiallyMuted, bool stereo)
+        : variant_(variant), initiallyMuted_(initiallyMuted), stereo_(stereo), clockFrequency_(clockFrequency), sampleRate_(sampleRate)
     {
         if (!sampleRate || sampleRate > clockFrequency)
             throw std::invalid_argument("Invalid PSG clock/sample rate.");
@@ -14,7 +14,7 @@ namespace R2SEGA8::Core
             volume_[i] = static_cast<float>(0.25 * std::pow(10.0, -static_cast<double>(i) / 10.0));
         volume_[15] = 0;
         highPass_ = std::exp(-2.0 * 3.14159265358979323846 * 20.0 / sampleRate_);
-        samples_.reserve(std::max(1u, sampleRate_ / 4));
+        samples_.reserve(std::max(1u, sampleRate_ / 4) * (stereo_ ? 2 : 1));
         reset();
     }
 
@@ -27,13 +27,22 @@ namespace R2SEGA8::Core
             state_.attenuation.fill(15);
         samplePhase_ = 0;
         sampleArea_ = previousInput_ = previousOutput_ = 0;
+        stereoRouting_ = 0xff;
+        stereoArea_.fill(0);
+        stereoPreviousInput_.fill(0);
+        stereoPreviousOutput_.fill(0);
         samples_.clear();
         updateLevel();
     }
 
     SN76489::Snapshot SN76489::snapshot() const
     {
-        return {state_, clockFrequency_, sampleRate_, samplePhase_, sampleArea_, previousInput_, previousOutput_};
+        Snapshot saved{state_, clockFrequency_, sampleRate_, samplePhase_, sampleArea_, previousInput_, previousOutput_};
+        saved.stereoRouting = stereoRouting_;
+        saved.stereoArea = stereoArea_;
+        saved.stereoPreviousInput = stereoPreviousInput_;
+        saved.stereoPreviousOutput = stereoPreviousOutput_;
+        return saved;
     }
 
     void SN76489::restore(const Snapshot &saved)
@@ -49,7 +58,16 @@ namespace R2SEGA8::Core
             std::any_of(s.counter.begin(), s.counter.end(), [](auto v)
                         { return v > 2048; }))
             throw std::invalid_argument("Invalid SN76489 snapshot.");
+        if (stereo_)
+            for (unsigned side = 0; side < 2; ++side)
+                if (!std::isfinite(saved.stereoArea[side]) || !std::isfinite(saved.stereoPreviousInput[side]) ||
+                    !std::isfinite(saved.stereoPreviousOutput[side]))
+                    throw std::invalid_argument("Invalid stereo SN76489 snapshot.");
         state_ = s;
+        stereoRouting_ = saved.stereoRouting;
+        stereoArea_ = saved.stereoArea;
+        stereoPreviousInput_ = saved.stereoPreviousInput;
+        stereoPreviousOutput_ = saved.stereoPreviousOutput;
         samplePhase_ = saved.samplePhase;
         sampleArea_ = saved.sampleArea;
         previousInput_ = saved.previousInput;
@@ -133,10 +151,24 @@ namespace R2SEGA8::Core
     void SN76489::updateLevel()
     {
         level_ = 0;
+        stereoLevel_.fill(0);
         for (unsigned channel = 0; channel < 4; ++channel)
             if ((variant_ == Variant::Sega && channel < 3 && state_.tone[channel] <= 1) || state_.output[channel])
-                level_ += volume_[state_.attenuation[channel]] * channelGains_[channel];
+            {
+                const float value = volume_[state_.attenuation[channel]] * channelGains_[channel];
+                level_ += value;
+                if (stereoRouting_ & (0x10u << channel))
+                    stereoLevel_[0] += value;
+                if (stereoRouting_ & (0x01u << channel))
+                    stereoLevel_[1] += value;
+            }
         levelPerClock_ = static_cast<double>(level_) * sampleRate_;
+    }
+
+    void SN76489::setStereoRouting(std::uint8_t routing)
+    {
+        stereoRouting_ = routing;
+        updateLevel();
     }
 
     void SN76489::setAudioSettings(const Common::AudioSettings &settings)
@@ -153,6 +185,31 @@ namespace R2SEGA8::Core
         // sampleRate_ <= clockFrequency_: cada clock cruza no máximo uma fronteira de amostra.
         // Integra o intervalo inteiro e transfere a área excedente para a janela seguinte.
         const auto phase = static_cast<std::uint64_t>(samplePhase_) + sampleRate_;
+        // Os lados compartilham a fase de amostragem, mas mantêm integração e filtro independentes.
+        if (stereo_)
+        {
+            for (unsigned side = 0; side < 2; ++side)
+                stereoArea_[side] += static_cast<double>(stereoLevel_[side]) * sampleRate_;
+            if (phase < clockFrequency_)
+            {
+                samplePhase_ = static_cast<unsigned>(phase);
+                return;
+            }
+            const auto overflow = static_cast<unsigned>(phase - clockFrequency_);
+            for (unsigned side = 0; side < 2; ++side)
+            {
+                const double excess = static_cast<double>(stereoLevel_[side]) * overflow;
+                const double input = (stereoArea_[side] - excess) / clockFrequency_;
+                const double output = input - stereoPreviousInput_[side] + highPass_ * stereoPreviousOutput_[side];
+                stereoPreviousInput_[side] = input;
+                stereoPreviousOutput_[side] = output;
+                if (samples_.size() < std::max(1u, sampleRate_ / 4) * 2)
+                    samples_.push_back(static_cast<float>(std::clamp(output, -1.0, 1.0)) * masterGain_);
+                stereoArea_[side] = excess;
+            }
+            samplePhase_ = overflow;
+            return;
+        }
         sampleArea_ += levelPerClock_;
         if (phase < clockFrequency_)
         {

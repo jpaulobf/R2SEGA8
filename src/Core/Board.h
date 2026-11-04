@@ -49,6 +49,8 @@ namespace R2SEGA8::Core
         virtual VideoFrame videoFrame() const { return {}; }
 
         // Transfere PCM mono float a 48 kHz; placas sem áudio limpam o destino.
+        // Informa o número de canais das amostras produzidas pela placa.
+        virtual unsigned audioChannels() const { return 1; }
         virtual void takeAudio(std::vector<float> &samples) { samples.clear(); }
 
         // Recebe ajustes de apresentação; placas sem mixer implementado ignoram a atualização.
