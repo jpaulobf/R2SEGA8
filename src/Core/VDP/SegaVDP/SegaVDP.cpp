@@ -14,6 +14,8 @@ namespace R2SEGA8::Core
         s.spriteCount = spriteCount_;
         s.hardwareSpriteCount = hardwareSpriteCount_;
         s.images = images_;
+        s.gameGearCram = gameGearCram_;
+        s.gameGearCramLatch = gameGearCramLatch_;
     }
 
     void SegaVDP::restore(const Snapshot &s)
@@ -29,6 +31,10 @@ namespace R2SEGA8::Core
         for (const auto &sprite : s.sprites)
             if (sprite.x < -8 || sprite.x > 255)
                 throw std::invalid_argument("Invalid Sega VDP sprite position.");
+        if (model_ == Model::GameGear)
+            for (std::size_t i = 1; i < s.gameGearCram.size(); i += 2)
+                if (s.gameGearCram[i] > 15)
+                    throw std::invalid_argument("Invalid Game Gear palette state.");
         state_ = s.chip;
         selectedSprites_ = s.selectedSprites;
         selectedSpriteCount_ = s.selectedSpriteCount;
@@ -38,6 +44,8 @@ namespace R2SEGA8::Core
         spriteCount_ = s.spriteCount;
         hardwareSpriteCount_ = s.hardwareSpriteCount;
         images_ = s.images;
+        gameGearCram_ = s.gameGearCram;
+        gameGearCramLatch_ = s.gameGearCramLatch;
     }
 
     void SegaVDP::selectSprites(unsigned line)
@@ -79,7 +87,7 @@ namespace R2SEGA8::Core
         {
             const unsigned index = selectedSprites_[i].index;
             // No 315-5124, R5 bit 0 mascara A7 das leituras de X e padrão.
-            const auto attribute = (base + ((state_.registers[5] & 1) ? 0x80 : 0) + index * 2) & 0x3fff;
+            const auto attribute = (base + ((model_ == Model::GameGear || (state_.registers[5] & 1)) ? 0x80 : 0) + index * 2) & 0x3fff;
             auto &sprite = sprites_[spriteCount_++];
             sprite.x = state_.vram[attribute] - ((state_.registers[0] & 8) ? 8 : 0);
             unsigned tile = state_.vram[(attribute + 1) & 0x3fff];
@@ -88,14 +96,14 @@ namespace R2SEGA8::Core
             tile |= (state_.registers[6] & 4) << 6;
             const unsigned tileRow = selectedSprites_[i].row / scale;
             const unsigned address = (tile * 32 + tileRow * 4) &
-                                     (0x27ff | ((state_.registers[6] & 3) << 11));
+                                     (model_ == Model::GameGear ? 0x3fff : (0x27ff | ((state_.registers[6] & 3) << 11)));
             for (unsigned plane = 0; plane < 4; ++plane)
                 sprite.planes[plane] = state_.vram[(address + plane) & 0x3fff];
         }
         hardwareSpriteCount_ = spriteCount_ < 8 ? spriteCount_ : 8;
         // Perfil SMS1: os últimos quatro sprites selecionados só ampliam verticalmente.
         for (unsigned i = 0; i < spriteCount_; ++i)
-            sprites_[i].doubleWidth = scale == 2 && (i >= 8 || i + 4 < hardwareSpriteCount_);
+            sprites_[i].doubleWidth = scale == 2 && (model_ == Model::GameGear || i >= 8 || i + 4 < hardwareSpriteCount_);
     }
 
     void SegaVDP::drawPixel()
@@ -117,7 +125,7 @@ namespace R2SEGA8::Core
                 const unsigned tileX = (x + 256 - scrollX) & 0xff;
                 const unsigned tileY = (y + scrollY) % 224;
                 const unsigned nameBase = (state_.registers[2] & 0x0e) << 10;
-                const unsigned nameMask = 0x3bff | ((state_.registers[2] & 1) << 10);
+                const unsigned nameMask = model_ == Model::GameGear ? 0x3fff : 0x3bff | ((state_.registers[2] & 1) << 10);
                 const unsigned nameAddress = (nameBase + ((tileY / 8) * 32 + tileX / 8) * 2) & nameMask;
                 const unsigned entry = state_.vram[nameAddress] | (state_.vram[(nameAddress + 1) & 0x3fff] << 8);
                 const unsigned row = (entry & 0x0400) ? 7 - (tileY & 7) : tileY & 7;
@@ -127,8 +135,7 @@ namespace R2SEGA8::Core
                 for (unsigned plane = 0; plane < 4; ++plane)
                 {
                     // R3 mascara A6–A13 nos planos 0/1; R4 mascara A11–A13 nos planos 2/3.
-                    const unsigned mask = plane < 2 ? (0x003f | (state_.registers[3] << 6))
-                                                    : (0x07ff | ((state_.registers[4] & 7) << 11));
+                    const unsigned mask = model_ == Model::GameGear ? 0x3fff : (plane < 2 ? (0x003f | (state_.registers[3] << 6)) : (0x07ff | ((state_.registers[4] & 7) << 11)));
                     color |= ((state_.vram[(pattern + plane) & mask] >> column) & 1) << plane;
                 }
                 paletteIndex = ((entry & 0x0800) ? 16 : 0) + color;
@@ -156,12 +163,22 @@ namespace R2SEGA8::Core
         }
         if (spriteColor && renderSprites_ && !backgroundPriority && !((state_.registers[0] & 0x20) && x < 8))
             paletteIndex = 16 + spriteColor;
-        const auto color = state_.cram[paletteIndex];
         auto &image = images_[state_.drawingImage];
         const auto offset = (y * Width + x) * 4;
-        image[offset] = (color & 3) * 85;
-        image[offset + 1] = ((color >> 2) & 3) * 85;
-        image[offset + 2] = ((color >> 4) & 3) * 85;
+        if (model_ == Model::GameGear)
+        {
+            const auto low = gameGearCram_[paletteIndex * 2], high = gameGearCram_[paletteIndex * 2 + 1];
+            image[offset] = (low & 15) * 17;
+            image[offset + 1] = (low >> 4) * 17;
+            image[offset + 2] = (high & 15) * 17;
+        }
+        else
+        {
+            const auto color = state_.cram[paletteIndex];
+            image[offset] = (color & 3) * 85;
+            image[offset + 1] = ((color >> 2) & 3) * 85;
+            image[offset + 2] = ((color >> 4) & 3) * 85;
+        }
         image[offset + 3] = 255;
     }
 
@@ -232,7 +249,11 @@ namespace R2SEGA8::Core
 
     VideoFrame SegaVDP::frame() const
     {
-        return {images_[state_.drawingImage ^ 1].data(), Width, Height, Width * 4, state_.completedFrames};
+        const auto *pixels = images_[state_.drawingImage ^ 1].data();
+        // A área do portátil começa em (48, 24); o passo continua sendo o da imagem completa.
+        if (model_ == Model::GameGear)
+            return {pixels + (24 * Width + 48) * 4, 160, 144, Width * 4, state_.completedFrames};
+        return {pixels, Width, Height, Width * 4, state_.completedFrames};
     }
 
     void SegaVDP::incrementAddress()
@@ -252,7 +273,19 @@ namespace R2SEGA8::Core
     void SegaVDP::writeData(std::uint8_t value)
     {
         state_.secondControlByte = false;
-        if (state_.code == 3)
+        if (state_.code == 3 && model_ == Model::GameGear)
+        {
+            // No Game Gear, a escrita par alimenta um latch; a ímpar grava os dois bytes da cor.
+            const auto address = state_.address & 0x3f;
+            if (!(address & 1))
+                gameGearCramLatch_ = value;
+            else
+            {
+                gameGearCram_[address - 1] = gameGearCramLatch_;
+                gameGearCram_[address] = value & 0x0f;
+            }
+        }
+        else if (state_.code == 3)
             state_.cram[state_.address & 0x1f] = value & 0x3f;
         else
             state_.vram[state_.address] = value;

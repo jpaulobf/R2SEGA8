@@ -60,6 +60,8 @@ namespace R2SEGA8::Core
             std::array<SpriteLine, 64> sprites{};
             unsigned spriteCount = 0, hardwareSpriteCount = 0;
             std::array<std::array<std::uint8_t, FrameBytes>, 2> images{};
+            std::array<std::uint8_t, 64> gameGearCram{};
+            std::uint8_t gameGearCramLatch = 0;
             template <class Archive>
             void stateArchive(Archive &ar)
             {
@@ -67,9 +69,27 @@ namespace R2SEGA8::Core
                 ar(selectedSprites, selectedSpriteCount, selectedSpriteOverflow, spriteSelectionValid,
                    sprites, spriteCount, hardwareSpriteCount, images);
             }
+            // O formato do Master System permanece inalterado; o Game Gear acrescenta a CRAM e seu latch.
+            template <class Archive>
+            void stateArchiveGameGear(Archive &ar)
+            {
+                stateArchive(ar);
+                ar(gameGearCram, gameGearCramLatch);
+            }
         };
 
+        // Inicializa o perfil Master System com temporização NTSC ou PAL.
         explicit SegaVDP(bool pal = false) : pal_(pal) {}
+        enum class Model
+        {
+            MasterSystem,
+            GameGear
+        };
+        
+        // Inicializa o modelo indicado com temporização NTSC.
+        explicit SegaVDP(Model model) : model_(model) {}
+        
+        // Retorna o total de linhas do quadro no perfil de temporização atual.
         unsigned linesPerFrame() const { return pal_ ? PalLinesPerFrame : LinesPerFrame; }
 
         // A VRAM e CRAM inicializam em zero por convenção; os acessos são imediatos nesta etapa.
@@ -78,6 +98,7 @@ namespace R2SEGA8::Core
         std::uint8_t readStatus();
         void writeControl(std::uint8_t value);
         void runMasterTicks(unsigned count);
+        
         // Contador vertical NTSC 192 linhas: 00–DA, D5–FF; leitura sem efeitos colaterais.
         std::uint8_t verticalCounter() const
         {
@@ -86,25 +107,42 @@ namespace R2SEGA8::Core
             return static_cast<std::uint8_t>(pal_ ? (line <= 0xf2 ? line : line - 57)
                                                   : (line <= 0xda ? line : line - 6));
         }
+        
+        // Informa se uma interrupção de linha ou quadro está habilitada e pendente.
         bool interrupt() const
         {
             return (state_.frameInterruptPending && (state_.registers[1] & 0x20)) ||
                    (state_.lineInterruptPending && (state_.registers[0] & 0x10));
         }
+        
+        // Retorna o último quadro completo; no Game Gear expõe apenas a área central.
         VideoFrame frame() const;
+        
+        // Ativa ou desativa a apresentação do fundo.
         void setRenderTiles(bool enabled) { renderTiles_ = enabled; }
+        
+        // Ativa ou desativa a apresentação dos sprites.
         void setRenderSprites(bool enabled) { renderSprites_ = enabled; }
+        
+        // Configura a seleção de sprites além do limite físico por linha.
         void setSpriteUnlimited(bool enabled) { spriteUnlimited_ = enabled; }
 
         // Permite validar a interface sem alterar latches ou memórias.
         const State &state() const { return state_; }
+        
+        // Copia o estado, a imagem e a paleta específica do modelo para o snapshot.
         void snapshot(Snapshot &snapshot) const;
+        
+        // Valida e restaura o snapshot de vídeo do modelo atual.
         void restore(const Snapshot &snapshot);
 
     private:
         // HClock -18, em relação ao início dos 256 pixels ativos.
         static constexpr unsigned HBlankEventDot = DotsPerLine - 18;
         bool pal_ = false;
+        Model model_ = Model::MasterSystem;
+        std::array<std::uint8_t, 64> gameGearCram_{};
+        std::uint8_t gameGearCramLatch_ = 0;
         State state_{};
         std::array<SelectedSprite, 64> selectedSprites_{};
         unsigned selectedSpriteCount_ = 0;
@@ -113,9 +151,13 @@ namespace R2SEGA8::Core
         unsigned spriteCount_ = 0, hardwareSpriteCount_ = 0;
         std::array<std::array<std::uint8_t, FrameBytes>, 2> images_{};
         bool renderTiles_ = true, renderSprites_ = true, spriteUnlimited_ = true;
+        // Avança o endereço de VRAM ou CRAM respeitando o espaço de 14 bits.
         void incrementAddress();
+        // Compõe o pixel atual de fundo, sprites e paleta.
         void drawPixel();
+        // Seleciona os sprites da linha e registra o excesso.
         void selectSprites(unsigned line);
+        // Prepara os dados dos sprites selecionados para o desenho da linha.
         void prepareSprites();
     };
 }
