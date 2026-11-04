@@ -64,6 +64,8 @@ namespace
         else if (board.type() == Common::SystemType::MasterSystem && board.hasMemoryMap())
             std::printf("Master System: %s Mode 4 video, PSG audio, VDP interrupts and basic controllers enabled; other mappers are pending.\n",
                         board.consoleProfile() == Common::ConsoleProfile::PAL ? "PAL" : "NTSC");
+        else if (board.type() == Common::SystemType::GameGear)
+            std::puts("Game Gear: Z80, Sega mapper, initial VDP, controls and stereo audio enabled.");
         else
             std::puts("ROM loaded; system memory mapping is not implemented yet.");
         std::fflush(stdout);
@@ -290,6 +292,12 @@ int R2SEGA8::Systems::Engine::run()
             const auto frame = board->videoFrame();
             return {frame.rgba, frame.width, frame.height, frame.pitch};
         };
+        callbacks.presentationSize = [&]() -> std::pair<unsigned, unsigned>
+        {
+            if (board && board->type() == R2SEGA8::Common::SystemType::GameGear)
+                return {160, 144};
+            return {256, 192};
+        };
         callbacks.inputEvent = [&](const SDL_Event &event, bool enabled)
         { input.handleEvent(event, enabled); };
         callbacks.inputAvailability = [&](bool enabled)
@@ -477,7 +485,7 @@ int R2SEGA8::Systems::Engine::run()
                         frameCounter.record(Clock::now());
                         board->takeAudio(audioSamples);
                         // O PSG continua avançando no fast-forward; apenas a saída PCM é descartada.
-                        if (loopMode != LoopMode::FastForward && !audio.submit(audioSamples.data(), audioSamples.size()))
+                        if (loopMode != LoopMode::FastForward && !audio.submit(audioSamples.data(), audioSamples.size(), board->audioChannels()))
                         {
                             std::cerr << "Audio: Playback disabled: " << SDL_GetError() << '\n';
                             audio.shutdown();
