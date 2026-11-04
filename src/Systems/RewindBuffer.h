@@ -12,6 +12,7 @@ namespace R2SEGA8::Systems
     class RewindBuffer
     {
     public:
+        // Dimensiona o histórico para a cadência e o nível de rewind selecionados.
         void configure(unsigned frequency, unsigned cyclesPerFrame, Common::RewindLevel level)
         {
             if (!frequency || !cyclesPerFrame)
@@ -24,12 +25,14 @@ namespace R2SEGA8::Systems
             first_ = count_ = captureCounter_ = rewindCounter_ = 0;
         }
 
+        // Descarta os estados e reinicia os contadores do histórico.
         void clear()
         {
             states_.clear();
             first_ = count_ = captureCounter_ = rewindCounter_ = 0;
         }
 
+        // Informa se o histórico já foi dimensionado.
         bool configured() const { return !states_.empty(); }
 
         // Chamada uma vez antes de cada quadro executado; o primeiro estado é capturado imediatamente.
@@ -40,6 +43,7 @@ namespace R2SEGA8::Systems
             return due;
         }
 
+        // Adiciona um estado e substitui o mais antigo quando o histórico está cheio.
         void push(std::vector<std::uint8_t> state)
         {
             if (states_.empty())
@@ -56,7 +60,9 @@ namespace R2SEGA8::Systems
             }
         }
 
+        // Prepara a leitura imediata do estado mais recente.
         void beginRewind() { rewindCounter_ = 0; }
+        // Agenda uma nova captura ao retornar à execução normal.
         void endRewind() { captureCounter_ = 0; }
 
         // Retorna um estado por intervalo, consumindo o futuro para permitir uma nova linha do tempo.

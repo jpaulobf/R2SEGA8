@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <utility>
 
 union SDL_Event;
 
@@ -77,6 +78,9 @@ namespace R2SEGA8::Window
 
         // Consulta o quadro para copiar à textura antes de emitir ações que possam invalidar seus bytes.
         std::function<FrameView()> frame;
+        
+        // Geometria nativa para escala e proporção da janela.
+        std::function<std::pair<unsigned, unsigned>()> presentationSize;
 
         // Consulta quadros emulados por segundo real; não depende da cadência de apresentação da janela.
         std::function<double()> fps;
