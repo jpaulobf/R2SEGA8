@@ -31,6 +31,12 @@ int main()
               "One emulated frame must be queued without starting an underfilled device");
         check(audio.submit(samples.data(), 800) && !audio.playing(), "Priming must continue below 40 ms");
         check(audio.submit(samples.data(), 800) && audio.playing(), "Priming threshold must resume playback");
+        check(audio.clear(), "Clear must reset the output before testing stereo");
+        check(!audio.submit(samples.data(), 3, 2) && !audio.submit(samples.data(), 4, 3),
+              "Incomplete frames and unsupported channel counts must be rejected");
+        check(audio.submit(samples.data(), 3200, 2) && audio.queuedSamples() == 1600 && !audio.playing(),
+              "Stereo queue length and threshold must count frames, not scalar samples");
+        check(audio.submit(samples.data(), 800, 2) && audio.playing(), "Stereo output must start after 40 ms");
         check(audio.clear() && !audio.playing() && audio.queuedSamples() == 0, "ROM replacement must pause and drop old PCM");
         check(audio.submit(samples.data(), samples.size()) && audio.playing() && audio.queuedSamples() <= 5760,
               "Oversized batches must be bounded to 120 ms");

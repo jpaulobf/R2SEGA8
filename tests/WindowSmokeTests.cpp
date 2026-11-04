@@ -646,6 +646,9 @@ int main()
             };
             callbacks.exit = [&]()
             { ++exits; };
+            std::pair<unsigned, unsigned> presentationSize{256, 192};
+            callbacks.presentationSize = [&]()
+            { return presentationSize; };
             callbacks.frame = [&]() -> R2SEGA8::Window::FrameView
             {
                 if (!frameEnabled)
@@ -926,6 +929,17 @@ int main()
             window.processEvents();
             if (pauseToggles != beforePause)
                 throw std::runtime_error("Pause/Break must ignore an unloaded session");
+            presentationSize = {160, 144};
+            window.render();
+            int resizedWidth = 0, resizedHeight = 0;
+            SDL_GetWindowSizeInPixels(nativeWindow, &resizedWidth, &resizedHeight);
+            if (resizedWidth != 160 * 3 || std::abs(resizedHeight - (144 * 3 + ImGui::GetFrameHeight() * SDL_GetWindowPixelDensity(nativeWindow))) > 1)
+                throw std::runtime_error("Game Gear presentation must resize to 160x144 at the selected scale");
+            presentationSize = {256, 192};
+            window.render();
+            SDL_GetWindowSizeInPixels(nativeWindow, &resizedWidth, &resizedHeight);
+            if (resizedWidth != 256 * 3)
+                throw std::runtime_error("Switching back must restore the console presentation width");
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
             if (!SDL_PushEvent(&quit) || !SDL_PushEvent(&quit) || window.processEvents() || exits != 1)

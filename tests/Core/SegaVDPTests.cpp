@@ -619,6 +619,33 @@ int main()
         command(vdp, 0x003f, 3);
         vdp.readData();
         check(vdp.state().readBuffer == vdp.state().vram[0x003f], "CRAM mode data reads use VRAM");
+        {
+            auto gg = std::make_unique<SegaVDP>(SegaVDP::Model::GameGear);
+            // Uma escrita par apenas prepara o latch, sem modificar a cor anterior.
+            write(*gg, 0x20, 3, {0x21, 0x03});
+            write(*gg, 0x20, 3, {0xfe});
+            gg->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+            const auto first = gg->frame();
+            check(first.width == 160 && first.height == 144 && first.pitch == 256 * 4,
+                  "Game Gear must expose the central 160x144 image with the original pitch");
+            pixel(*gg, 0, 0, 17, 34, 51);
+            // A escrita �mpar usa o latch anterior mesmo em outro endere�o ou espelho.
+            write(*gg, 0x61, 3, {0x04});
+            gg->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+            pixel(*gg, 0, 0, 238, 255, 68);
+            pixel(*gg, 159, 143, 238, 255, 68);
+        }
+        {
+            auto gg = std::make_unique<SegaVDP>(SegaVDP::Model::GameGear);
+            write(*gg, 0x20, 3, {0x00, 0x0f, 0x0f, 0x00});
+            gg->runMasterTicks((24 * SegaVDP::DotsPerLine + 48) * 2);
+            reg(*gg, 7, 1);
+            gg->runMasterTicks(2);
+            reg(*gg, 7, 0);
+            gg->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+            pixel(*gg, 0, 0, 255, 0, 0);
+            pixel(*gg, 1, 0, 0, 0, 255);
+        }
         rasterAndBackground();
         scrolling();
         fineScrollEdge();

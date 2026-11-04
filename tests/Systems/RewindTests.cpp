@@ -1,4 +1,5 @@
 #include "Core/Systems/SG1000/SG1000.h"
+#include "Core/Systems/GameGear/GameGear.h"
 #include "Systems/Input.h"
 #include "Systems/RewindBuffer.h"
 #include <chrono>
@@ -49,10 +50,10 @@ namespace
         check(!history.configured() && !history.step(), "Clearing must discard the history");
     }
 
-    void boardRestore()
+    void boardRestore(bool gameGear)
     {
         const auto path = std::filesystem::temp_directory_path() /
-                          ("r2sega8-rewind-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".sg");
+                          ("r2sega8-rewind-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + (gameGear ? ".gg" : ".sg"));
         struct Cleanup
         {
             std::filesystem::path path;
@@ -67,7 +68,11 @@ namespace
             file.put('\x76');
             check(static_cast<bool>(file), "ROM fixture");
         }
-        auto board = std::make_unique<Core::SG1000>(Core::Cartridge(path));
+        std::unique_ptr<Core::Board> board;
+        if (gameGear)
+            board = std::make_unique<Core::GameGear>(Core::Cartridge(path));
+        else
+            board = std::make_unique<Core::SG1000>(Core::Cartridge(path));
         Systems::RewindBuffer history;
         history.configure(board->clockFrequency(), board->cyclesPerFrame(), Common::RewindLevel::Precise);
         for (unsigned frame = 0; frame < 4; ++frame)
@@ -142,7 +147,8 @@ int main()
         history(Common::RewindLevel::Light, 10);
         history(Common::RewindLevel::Normal, 5);
         history(Common::RewindLevel::Precise, 2);
-        boardRestore();
+        boardRestore(false);
+        boardRestore(true);
         controls();
         std::cout << "Rewind history, board restoration and controls passed\n";
     }

@@ -1,10 +1,12 @@
 #include "Core/Systems/SG1000/SG1000.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
+#include "Core/Systems/GameGear/GameGear.h"
 #include "Systems/SaveStateStore.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 namespace
@@ -87,6 +89,17 @@ int main()
         {
             sms.loadState(store.load(sms, slot));
             check(sms.readMemory(0xc000) == slot, "Master System slots must preserve independent states");
+        }
+        auto gg = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.rom("game.gg", '\x76')));
+        for (unsigned slot = 1; slot <= 3; ++slot)
+        {
+            gg->writeMemory(0xc000, static_cast<std::uint8_t>(slot + 10));
+            store.save(*gg, slot);
+        }
+        for (unsigned slot = 1; slot <= 3; ++slot)
+        {
+            gg->loadState(store.load(*gg, slot));
+            check(gg->readMemory(0xc000) == slot + 10, "Game Gear slots must preserve independent states");
         }
         std::cout << "Save state store tests passed\n";
     }

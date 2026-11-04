@@ -318,7 +318,57 @@ int main()
         const auto largeSms = fixtures.write("too-large.sms", std::vector<std::uint8_t>(0x100001, 0));
         rejects([&]
                 { Systems::createBoard(SystemType::MasterSystem, Core::Cartridge(largeSms)); }, "Oversized Sega mapper ROM accepted");
-        for (auto type : {SystemType::SC3000, SystemType::GameGear})
+        // A CPU programa a CRAM por OUT e o VDP continua avan�ando durante HALT.
+        const std::vector<std::uint8_t> ggVideoCode = {
+            0x3e, 0x20, 0xd3, 0xbf, 0x3e, 0xc0, 0xd3, 0xbf,
+            0x3e, 0x21, 0xd3, 0xbe, 0x3e, 0x03, 0xd3, 0xbe, 0x76};
+        auto ggVideo = Systems::createBoard(SystemType::GameGear, Core::Cartridge(fixtures.write("video.gg", ggVideoCode)));
+        ggVideo->runCycles(ggVideo->cyclesPerFrame());
+        const auto ggFrame = ggVideo->videoFrame();
+        check(ggVideo->cpu().state().halted && ggFrame.number == 1 && ggFrame.width == 160 && ggFrame.height == 144 &&
+                  ggFrame.rgba[0] == 17 && ggFrame.rgba[1] == 34 && ggFrame.rgba[2] == 51,
+              "Game Gear CPU must program its VDP and publish the cropped frame");
+        check((ggVideo->input(0xbf) & 0x80) && !(ggVideo->input(0xbf) & 0x80),
+              "Game Gear VBlank status must acknowledge through the VDP port");
+        auto gg = Systems::createBoard(SystemType::GameGear, Core::Cartridge(fixtures.write("banked.gg", smsBanks)));
+        check(gg->hasMemoryMap() && gg->ram().size() == 8192, "Game Gear must expose its 8 KiB memory map");
+        check(gg->clockFrequency() == 3579545 && gg->cyclesPerFrame() == 59736, "Game Gear NTSC timing");
+        check(gg->readMemory(0x03ff) == 0 && gg->readMemory(0x4000) == 1 && gg->readMemory(0x8000) == 2,
+              "Game Gear initial ROM banks");
+        gg->writeMemory(0xfffd, 3);
+        gg->writeMemory(0xfffe, 4);
+        gg->writeMemory(0xffff, 0xff);
+        check(gg->readMemory(0x03ff) == 0 && gg->readMemory(0x0400) == 3 && gg->readMemory(0x4000) == 4 &&
+                  gg->readMemory(0x8000) == 7,
+              "Game Gear bank selection and fixed ROM");
+        gg->writeMemory(0xdffd, 6);
+        check(gg->readMemory(0xfffd) == 6 && gg->readMemory(0x0400) == 3, "Game Gear RAM mirror must not change banks");
+        gg->writeMemory(0x8000, 0x55);
+        check(gg->readMemory(0x8000) == 7, "Game Gear ROM must be read-only");
+        gg->writeMemory(0xfffc, 8);
+        gg->writeMemory(0x8000, 0x11);
+        gg->writeMemory(0xfffc, 12);
+        gg->writeMemory(0x8000, 0x22);
+        gg->writeMemory(0xfffc, 8);
+        check(gg->readMemory(0x8000) == 0x11, "Game Gear cartridge RAM banks must retain data");
+        gg->writeMemory(0xfffc, 12);
+        check(gg->readMemory(0x8000) == 0x22, "Game Gear second cartridge RAM bank");
+        gg->writeMemory(0xfffc, 0);
+        check(gg->readMemory(0x8000) == 7, "Game Gear must return to ROM after disabling RAM");
+        auto ggCPU = Systems::createBoard(SystemType::GameGear, Core::Cartridge(fixtures.write("bank-cpu.gg", bankCode)));
+        ggCPU->runCycles(60);
+        check(ggCPU->cpu().state().halted && ggCPU->cpu().state().pc == 0x8001,
+              "Game Gear CPU must execute code from its newly selected bank");
+        const std::vector<std::uint8_t> ggMemoryCode = {0x3e, 0x5a, 0x32, 0x34, 0xc2, 0x3a, 0x34, 0xe2, 0x76};
+        auto ggMemoryCPU = Systems::createBoard(SystemType::GameGear, Core::Cartridge(fixtures.write("memory-cpu.gg", ggMemoryCode)));
+        ggMemoryCPU->runCycles(60);
+        check(ggMemoryCPU->cpu().state().halted && ggMemoryCPU->cpu().state().a == 0x5a &&
+                  ggMemoryCPU->readMemory(0xc234) == 0x5a,
+              "Game Gear CPU must write RAM and read its mirror");
+        rejects([&]
+                { Systems::createBoard(SystemType::GameGear, Core::Cartridge(largeSms)); },
+                "Oversized Game Gear ROM accepted");
+        for (auto type : {SystemType::SC3000})
         {
             auto other = Systems::createBoard(type, Core::Cartridge(small));
             check(other->type() == type && other->cartridge().rom().size() == 3, "System factory lost cartridge/type");
