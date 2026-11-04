@@ -23,15 +23,19 @@ por jogador ao `Core::IO::Joypad`, que não depende de SDL.
 | Função | Teclado P1 | Posição SDL do gamepad / layout Xbox |
 | --- | --- | --- |
 | Direções | WASD ou setas | D-pad ou analógico esquerdo |
-| A / botão 1 | J | South / A |
-| B / botão 2 | K | East / B |
-| Turbo A | U | West / X |
-| Turbo B | I | North / Y |
+| A / botão 1 | K | East / B |
+| B / botão 2 | J | South / A |
+| Turbo A | I | North / Y |
+| Turbo B | U | West / X |
 | Start → Pause/Hold do console | Enter | Start |
 | Select, sem efeito neste SG-1000 | Backspace | Back/View |
 
 As letras impressas variam entre controles; a associação usa a posição lógica da SDL.
 O teclado é atribuído a P1 por padrão, mas a API permite teclas para P2.
+
+No Game Gear, essas mesmas associações controlam o portátil: Enter ou Start
+do gamepad aciona o botão Start, e Select não tem função. Apenas o controle de
+P1 é conectado; a comunicação pelo conector externo ainda não é emulada.
 
 TAB mantido solicita avanço rápido à Engine, quando permitido em
 `Hacks > Enable Fast-Forward` (ativado por padrão). Não pertence ao enum
