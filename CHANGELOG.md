@@ -2,12 +2,25 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
-## v0.3.0
+## v0.4.0
 
+- Abertura de ROMs em arquivos ZIP pelo seletor ou arrastar e soltar. A primeira
+  ROM SG/SC/SMS/GG do arquivo é carregada; são aceitas entradas sem compressão
+  ou com DEFLATE. ZIP64, arquivos criptografados e multidisco não são suportados.
+- Master System: contador horizontal e captura pelas linhas TH dos controles,
+  incluindo espelhos das portas. A versão 2 dos save states preserva esses dados;
+  estados da versão 1 continuam legíveis, mas versões anteriores do emulador
+  não abrem os novos estados.
+- Ajustados os instantes de HBlank, interrupções, contador vertical, overflow e
+  colisão de sprites no VDP. O atraso de colisão no Master System é uma
+  aproximação; alterações de registradores durante esse intervalo ainda não
+  são modeladas por uma fila de pixels.
+- Adicionado executor opcional e sem interface para o SMS VDP Test. Na ROM
+  documentada, 53 dos 55 testes passaram; permanecem pendentes a fase da
+  interrupção de quadro e a colisão fora da área vertical ativa. Instruções,
+  resultados e limites estão em docs/Building.md.
 - Save State, Load State e Rewind disponíveis para Game Gear, com três slots e atalhos F5/F6.
 
-- Save State e Load State também disponíveis para Master System, com os mesmos
-  três slots e atalhos F5/F6. O estado exige a mesma ROM e perfil NTSC/PAL.
 - Save State e Load State também disponíveis para Master System, com os mesmos
   três slots e atalhos F5/F6. O estado exige a mesma ROM e perfil NTSC/PAL.
 

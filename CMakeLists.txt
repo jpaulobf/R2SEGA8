@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(R2SEGA8 VERSION 0.2.7 LANGUAGES C CXX)
+project(R2SEGA8 VERSION 0.4.0 LANGUAGES C CXX)
 
 if(MSVC)
     add_compile_options(/utf-8)
@@ -8,6 +8,13 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(R2SEGA8_BUILD_GUI "Build the SDL3 / Dear ImGui application" ON)
+
+include(FetchContent)
+set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(zlib
+    GIT_REPOSITORY https://github.com/madler/zlib.git
+    GIT_TAG v1.3.1)
+FetchContent_MakeAvailable(zlib)
 
 add_library(r2sega8_core STATIC
     src/Core/Audio/SN76489/SN76489.cpp
@@ -26,7 +33,8 @@ add_library(r2sega8_core STATIC
     src/Core/Systems/GameGear/GameGear.cpp
 )
 target_compile_features(r2sega8_core PUBLIC cxx_std_17)
-target_include_directories(r2sega8_core PUBLIC src)
+target_include_directories(r2sega8_core PUBLIC src PRIVATE ${zlib_SOURCE_DIR} ${zlib_BINARY_DIR})
+target_link_libraries(r2sega8_core PRIVATE zlibstatic)
 if(MSVC)
     target_compile_options(r2sega8_core PRIVATE /W4 /utf-8)
 else()
@@ -182,9 +190,25 @@ if(BUILD_TESTING)
     target_link_libraries(z80_vectors PRIVATE r2sega8_core)
     add_executable(z80_exerciser tests/Core/Z80Exerciser.cpp)
     target_link_libraries(z80_exerciser PRIVATE r2sega8_core)
+    add_executable(sms_vdp_diagnostic tests/Core/SmsVdpDiagnostic.cpp)
+    target_link_libraries(sms_vdp_diagnostic PRIVATE r2sega8_core)
+    set(R2SEGA8_SMS_VDP_TEST_ROM "${CMAKE_BINARY_DIR}/sms-vdp-test-source/VDPTest.sms" CACHE FILEPATH
+        "Path to the pinned SMS VDP Test ROM")
+    foreach(test_number RANGE 1 60)
+        if(test_number EQUAL 20 OR (test_number GREATER_EQUAL 37 AND test_number LESS_EQUAL 40))
+            continue()
+        endif()
+        add_test(NAME sms_vdp_diagnostic_${test_number}
+            COMMAND sms_vdp_diagnostic "${R2SEGA8_SMS_VDP_TEST_ROM}" ${test_number})
+        set_tests_properties(sms_vdp_diagnostic_${test_number} PROPERTIES SKIP_RETURN_CODE 77)
+    endforeach()
     add_executable(sg1000_input_tests tests/Systems/SG1000InputTests.cpp)
     target_link_libraries(sg1000_input_tests PRIVATE r2sega8_core)
     add_test(NAME sg1000_input_tests COMMAND sg1000_input_tests)
+    add_executable(zip_rom_tests tests/Systems/ZipRomTests.cpp)
+    target_include_directories(zip_rom_tests PRIVATE ${zlib_SOURCE_DIR} ${zlib_BINARY_DIR})
+    target_link_libraries(zip_rom_tests PRIVATE r2sega8_core zlibstatic)
+    add_test(NAME zip_rom_tests COMMAND zip_rom_tests "${CMAKE_CURRENT_BINARY_DIR}/zip-rom-test-data")
     add_executable(rom_system_tests tests/Systems/RomSystemTests.cpp)
     target_link_libraries(rom_system_tests PRIVATE r2sega8_board_factory)
     add_test(NAME rom_system_tests COMMAND rom_system_tests)

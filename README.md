@@ -17,7 +17,11 @@ and stereo PSG audio; compatibility is still being improved.
 ## Opening a ROM
 
 Use **File > Open** or **Ctrl+O**, then click a ROM to load it immediately.
-Dragging a ROM into the window also loads it directly.
+Dragging a ROM into the window also loads it directly. ZIP archives are supported:
+the first .sg, .sc, .sms or .gg entry is loaded, using its extension to select
+the system. Stored and DEFLATE entries are supported; ZIP64, encrypted and
+multi-disk archives are not supported. ROMs are limited to 16 MiB and ZIPs to
+128 MiB.
 
 Use **File > Reset** or **F12** to restart the current ROM, and **File > Unload**
 to stop emulation and close the cartridge. Audio preferences stay unchanged.
@@ -54,6 +58,10 @@ and **Enter** for SG-1000 Pause/Hold or Game Gear Start. **I/U** provide turbo f
 SDL-compatible gamepads are detected automatically, including connection and
 removal while running. Two players are supported. See the [input guide](docs/Input.md)
 for gamepad positions and keyboard mappings.
+
+For Master System light-gun games, choose **Input > Enable Light Phaser**.
+Aim with the mouse and press the left mouse button to fire. The Light Phaser
+occupies controller port 1 while enabled.
 
 ## Building
 
