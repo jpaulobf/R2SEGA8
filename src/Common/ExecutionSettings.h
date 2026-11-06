@@ -29,6 +29,7 @@ namespace R2SEGA8::Common
         bool renderSprites = true;
         bool renderTiles = true;
         bool invert12Enabled = false;
+        bool lightPhaserEnabled = false;
         bool invertT1112Enabled = false;
     };
 }

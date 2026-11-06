@@ -78,7 +78,7 @@ namespace R2SEGA8::Window
 
         // Consulta o quadro para copiar à textura antes de emitir ações que possam invalidar seus bytes.
         std::function<FrameView()> frame;
-        
+
         // Geometria nativa para escala e proporção da janela.
         std::function<std::pair<unsigned, unsigned>()> presentationSize;
 
@@ -105,6 +105,9 @@ namespace R2SEGA8::Window
 
         // Notifica foco/captura/diálogos, inclusive quando não há eventos ou um menu abre durante render.
         std::function<void(bool)> inputAvailability;
+
+        // Posição no quadro nativo (-1 fora da imagem) e gatilho do mouse.
+        std::function<void(int, int, bool)> lightPhaser;
 
         std::function<DebugView()> debugView;
         std::function<std::uint8_t(std::uint16_t)> debugRead;
