@@ -243,7 +243,7 @@ int main()
         vdpCPU->runCycles(100);
         vdpCPU->output(0xbf, 0x23);
         vdpCPU->output(0x18f, 0x01);
-        check(vdpCPU->cpu().state().halted && vdpCPU->input(0x1be) == 0x5a && vdpCPU->input(0x40) == 0 && vdpCPU->input(0x41) == 0xff,
+        check(vdpCPU->cpu().state().halted && vdpCPU->input(0x1be) == 0x5a && vdpCPU->input(0x40) == 0 && vdpCPU->input(0x41) == 0,
               "SMS Z80 VDP writes, port mirroring and buffered read");
         vdpCPU->output(0xbf, 0x20);
         vdpCPU->output(0xbf, 0x81);

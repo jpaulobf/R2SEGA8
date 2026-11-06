@@ -74,14 +74,13 @@ namespace
         pixel(vdp, 0, 0, 255, 0, 0);
         pixel(vdp, 8, 0, 0, 255, 0);
         pixel(vdp, 15, 7, 0, 0, 255);
-        vdp.runMasterTicks(324 * 2);
+        vdp.runMasterTicks(316 * 2);
         check(!(vdp.state().status & 0x80) && !vdp.interrupt(), "VBlank must not latch on line C0");
         vdp.runMasterTicks(2);
         check(vdp.state().frameInterruptPending && !(vdp.state().status & 0x80) && !vdp.interrupt(),
               "Frame interrupt must become pending before its status flag");
         reg(vdp, 1, 0x60);
         check(vdp.interrupt(), "Enabling pending frame IRQ must assert IRQ");
-        vdp.runMasterTicks(4);
         check(vdp.verticalCounter() == 0xc1 && !(vdp.state().status & 0x80),
               "V counter changes before the VBlank status flag");
         vdp.runMasterTicks(2);
@@ -334,12 +333,31 @@ namespace
             write(vdp, 0x3f80, 1, {1, 0, 1, 0});
             vdp.runMasterTicks(8 * 2);
             check(!(vdp.readStatus() & 0x20), "Masked pixels must not set collision");
+            vdp.runMasterTicks(10 * 2);
+            check(!(vdp.readStatus() & 0x20), "Collision must wait for the sprite processing delay");
             vdp.runMasterTicks(2);
-            check(vdp.readStatus() & 0x20, "Collision must be detected at the first unmasked pixel");
+            check(vdp.readStatus() & 0x20, "Collision must be detected after the first unmasked pixel");
             reg(vdp, 0, 4);
-            vdp.runMasterTicks(lineTicks - 9 * 2);
-            vdp.runMasterTicks(4);
+            vdp.runMasterTicks(lineTicks - 19 * 2);
+            vdp.runMasterTicks(24);
             check(vdp.readStatus() & 0x20, "Unmasking the left column restores collisions there");
+        }
+
+        // A colisão do último pixel ativo amadurece durante a borda direita.
+        {
+            auto instance = std::make_unique<SegaVDP>();
+            auto &vdp = *instance;
+            setup(vdp, 0xff, 255, 2);
+            reg(vdp, 1, 0x40);
+            vdp.runMasterTicks(265 * 2);
+            check(!(vdp.readStatus() & 0x20), "Rightmost collision must not latch early");
+            auto saved = std::make_unique<SegaVDP::Snapshot>();
+            vdp.snapshot(*saved);
+            vdp.runMasterTicks(2);
+            check(vdp.readStatus() & 0x20, "Rightmost active pixel must collide in the right border");
+            vdp.restore(*saved);
+            vdp.runMasterTicks(2);
+            check(vdp.readStatus() & 0x20, "Restoring before a delayed collision must preserve its timing");
         }
 
         // Testes posteriores em hardware contestam a colisão apenas fora da área ativa.
@@ -496,7 +514,8 @@ namespace
         for (unsigned i = 0; i < 9; ++i)
             vdp.writeData(0);
         vdp.writeData(0xd0);
-        vdp.runMasterTicks(327 * 2);
+        // A leitura antes do evento não deve observar overflow; a seguinte deve.
+        vdp.runMasterTicks(317 * 2);
         check(!(vdp.readStatus() & 0x40), "Overflow must not be signalled while the next line is still being prepared");
         vdp.runMasterTicks(2);
         check(vdp.readStatus() & 0x40, "Overflow is signalled in HBlank for the selected next line");
@@ -509,7 +528,7 @@ namespace
         auto instance = std::make_unique<SegaVDP>();
         auto &vdp = *instance;
         constexpr unsigned lineTicks = SegaVDP::DotsPerLine * 2;
-        constexpr unsigned hblankTicks = 325 * 2 + 2;
+        constexpr unsigned hblankTicks = 319 * 2 + 2;
         reg(vdp, 10, 3);
         // O contador é carregado durante VBlank, mesmo com a interrupção desabilitada.
         vdp.runMasterTicks(SegaVDP::MasterTicksPerFrame);
@@ -551,24 +570,38 @@ namespace
         auto &vdp = *instance;
         reg(vdp, 0, 0x10);
         reg(vdp, 10, 0);
-        vdp.runMasterTicks(324 * 2);
+        vdp.runMasterTicks(316 * 2);
         reg(vdp, 8, 8);
         check(!vdp.interrupt() && vdp.verticalCounter() == 0, "HBlank events must not happen early");
         vdp.runMasterTicks(2);
+        check(vdp.verticalCounter() == 1 && !vdp.interrupt(), "V counter advances before the line interrupt");
+        vdp.runMasterTicks(4);
         check(vdp.state().horizontalScroll == 8 && !vdp.interrupt(), "R8 must be latched before HINT");
         reg(vdp, 8, 16);
         vdp.runMasterTicks(2);
-        check(vdp.interrupt() && vdp.state().horizontalScroll == 8 && vdp.verticalCounter() == 0,
-              "HINT must occur after R8 latch and before V counter changes");
-        vdp.runMasterTicks(2);
-        check(vdp.verticalCounter() == 1, "V counter must advance in HBlank");
+        check(vdp.interrupt() && vdp.state().horizontalScroll == 8 && vdp.verticalCounter() == 1,
+              "HINT must occur after R8 latch");
         vdp.readStatus();
         vdp.runMasterTicks(SegaVDP::DotsPerLine * 2);
         check(vdp.state().horizontalScroll == 16, "R8 writes after the latch apply on the following line");
-        vdp.runMasterTicks(260 * SegaVDP::DotsPerLine * 2 - 2);
+        vdp.runMasterTicks(260 * SegaVDP::DotsPerLine * 2 - 8);
         check(vdp.verticalCounter() == 0xff, "Final V counter value before frame wrap");
         vdp.runMasterTicks(2);
         check(vdp.verticalCounter() == 0, "V counter wraps during the last horizontal blank");
+    }
+
+    void horizontalCounterSequence()
+    {
+        SegaVDP vdp;
+        // The counter advances every two dots and skips 94–E8 during retrace.
+        vdp.runMasterTicks(2 * 293);
+        check(vdp.horizontalCounter() == 0x93, "H counter before retrace");
+        vdp.runMasterTicks(4);
+        check(vdp.horizontalCounter() == 0xe9, "H counter jumps from 93 to E9");
+        vdp.runMasterTicks(2 * 44);
+        check(vdp.horizontalCounter() == 0xff, "H counter reaches FF before wrap");
+        vdp.runMasterTicks(4);
+        check(vdp.horizontalCounter() == 0, "H counter wraps to zero");
     }
 
     void verticalCounter()
@@ -656,6 +689,7 @@ int main()
         spriteOverflowTiming();
         lineInterrupts();
         horizontalTiming();
+        horizontalCounterSequence();
         verticalCounter();
         {
             auto pal = std::make_unique<SegaVDP>(true);

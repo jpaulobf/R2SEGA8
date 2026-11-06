@@ -37,6 +37,15 @@ int main()
             original->output(0x7f, 0x91);
             original->runCycles(61321);
             const auto saved = original->saveState();
+            // Version 1 predates the IO control and horizontal latch bytes.
+            auto old = saved;
+            old[4] = 1;
+            old.erase(old.end() - 10, old.end());
+            auto oldChecksum = Common::fnv1a64(old);
+            for (unsigned i = 0; i < 8; ++i) old.push_back(static_cast<std::uint8_t>(oldChecksum >> (8 * i)));
+            restored->loadState(old);
+            check(restored->input(0x7f) == 0 && (restored->input(0xdd) & 0xc0) == 0xc0,
+                  "Version 1 states must restore default IO and H counter latch");
             restored->loadState(saved);
             check(restored->saveState() == saved, "State must round-trip with cartridge RAM and mapper");
             check(restored->readMemory(0x8123) == 0xa5 && restored->readMemory(0xc100) == 0x77 && restored->readMemory(0x400) == 3,

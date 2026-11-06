@@ -79,6 +79,72 @@ namespace
         check(rejected, "Invalid player must be rejected");
     }
 
+    void horizontalLatch(const std::filesystem::path &path)
+    {
+        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        board->output(0x3f, 0x05); // TH A e B como saídas baixas.
+        check((board->input(0xdd) & 0xc0) == 0, "TH output levels must be visible");
+        board->runCycles(40);
+        const auto expected = board->vdp().horizontalCounter();
+        board->output(0x01, 0xff); // Espelho, transição para entradas altas.
+        check(board->input(0x7f) == expected, "TH rising edge must latch H counter");
+        board->runCycles(40);
+        for (unsigned port = 0x41; port <= 0x7f; port += 2)
+            check(board->input(static_cast<std::uint16_t>(port)) == expected, "H counter mirrors must retain latch");
+        board->output(0x3f, 0xff);
+        check(board->input(0x7f) == expected, "No transition must preserve the latch");
+        board->output(0x3f, 0xdd); // Somente TH A baixa.
+        check(board->input(0x7f) == expected && (board->input(0xdd) & 0xc0) == 0x80,
+              "Falling TH must not latch and must affect only port A");
+        const auto saved = board->saveState();
+        board->output(0x3f, 0xff);
+        const auto next = board->input(0x7f);
+        check(next != expected, "A subsequent edge must capture the current counter");
+        board->loadState(saved);
+        check(board->input(0x7f) == expected && (board->input(0xdd) & 0xc0) == 0x80,
+              "Save state must restore both latch and TH output");
+        board->output(0x3f, 0xff);
+        check(board->input(0x7f) == next, "Restored TH must capture the same counter on its next edge");
+        board->output(0x3f, 0x77); // Somente TH B baixa.
+        board->runCycles(40);
+        const auto portB = board->vdp().horizontalCounter();
+        board->output(0x3f, 0xff);
+        check(board->input(0x7f) == portB, "Port B TH must also latch the counter");
+    }
+
+    void lightPhaser(const std::filesystem::path &path)
+    {
+        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        board->setInput({mask(Button::Up) | mask(Button::B), 0});
+        board->setLightPhaser(true, 80, 20, true);
+        check((board->input(0xdc) & 0x3f) == 0x2f, "Phaser replaces port A with active-low trigger");
+        check((board->input(0xdd) & 0x40) != 0, "Sensor starts dark");
+        board->output(0xbf, 0x10);
+        board->output(0xbf, 0xc0);
+        board->output(0xbe, 0x3f); // Bright backdrop.
+        bool detected = false;
+        for (unsigned i = 0; i < board->cyclesPerFrame(); ++i)
+        {
+            board->runCycles(1);
+            if (!(board->input(0xdd) & 0x40))
+            {
+                detected = true;
+                check(board->input(0x7f) >= 57 && board->input(0x7f) <= 62, "Light latches the compensated horizontal beam position");
+                const auto latch = board->input(0x7f);
+                board->runCycles(20);
+                check(!(board->input(0xdd) & 0x40) && board->input(0x7f) == latch,
+                      "Sensor pulse remains readable without relatching");
+                board->runCycles(50);
+                check(board->input(0xdd) & 0x40, "Sensor pulse expires after the beam passes");
+                break;
+            }
+        }
+        check(detected, "Bright raster must activate sensor near aim");
+        board->setLightPhaser(false, -1, -1, false);
+        check((board->input(0xdd) & 0x40) && (board->input(0xdc) & 0x3f) == 0x1e,
+              "Disabling Phaser restores controller and releases sensor");
+    }
+
     void audio(const std::filesystem::path &path)
     {
         auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
@@ -174,6 +240,8 @@ int main()
     {
         Fixture fixture;
         controls(fixture.path);
+        horizontalLatch(fixture.path);
+        lightPhaser(fixture.path);
         audio(fixture.path);
         videoStartup(fixture.path);
         turbo(fixture.path);

@@ -547,6 +547,8 @@ int main()
             int exits = 0, attempts = 0, memoryQueries = 0;
             bool rejectLoad = false;
             bool inputAllowed = false, lastKeyAllowed = false;
+            int phaserX = -1, phaserY = -1;
+            bool phaserTrigger = false;
             R2SEGA8::Systems::Input hostInput;
             unsigned keyEvents = 0;
             bool frameEnabled = false;
@@ -627,6 +629,8 @@ int main()
                 if (!enabled)
                     hostInput.clear();
             };
+            callbacks.lightPhaser = [&](int x, int y, bool trigger)
+            { phaserX = x; phaserY = y; phaserTrigger = trigger; };
             callbacks.openRom = [&](const std::filesystem::path &path, auto type)
             {
                 ++attempts;
@@ -735,6 +739,48 @@ int main()
             window.render();
             if (!hasVideoTexture(8, 8))
                 throw std::runtime_error("Frame callback did not produce a nearest-filtered presentation texture");
+            {
+                const auto bounds = videoBounds(8, 8);
+                SDL_Event motion{};
+                motion.type = SDL_EVENT_MOUSE_MOTION;
+                motion.motion.windowID = windowID;
+                motion.motion.x = (bounds.Min.x + bounds.Max.x) * 0.5f;
+                motion.motion.y = (bounds.Min.y + bounds.Max.y) * 0.5f;
+                SDL_PushEvent(&motion);
+                SDL_Event click{};
+                click.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+                click.button.windowID = windowID;
+                click.button.button = SDL_BUTTON_LEFT;
+                click.button.x = motion.motion.x;
+                click.button.y = motion.motion.y;
+                SDL_PushEvent(&click);
+                window.processEvents();
+                window.render();
+                if (!inputAllowed || !phaserTrigger || phaserX < 126 || phaserX > 130 || phaserY < 94 || phaserY > 98)
+                    throw std::runtime_error("Light Phaser mouse input was not mapped to the video center: " +
+                                             std::to_string(phaserX) + "," + std::to_string(phaserY) +
+                                             " trigger=" + std::to_string(phaserTrigger) + " enabled=" + std::to_string(inputAllowed));
+                // Clicar na imagem pode fazer o ImGui capturar o teclado nos quadros
+                // seguintes, sem impedir que a mira e o gatilho continuem ativos.
+                window.processEvents();
+                window.render();
+                window.processEvents();
+                window.render();
+                if (!phaserTrigger || phaserX < 126 || phaserX > 130 || phaserY < 94 || phaserY > 98)
+                    throw std::runtime_error("Keyboard capture must not interrupt a held Light Phaser trigger");
+                click.type = SDL_EVENT_MOUSE_BUTTON_UP;
+                SDL_PushEvent(&click);
+                window.processEvents();
+                window.render();
+                focus.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+                SDL_PushEvent(&focus);
+                window.processEvents();
+                if (phaserTrigger || phaserX != -1 || phaserY != -1)
+                    throw std::runtime_error("Focus loss must release the Light Phaser");
+                focus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+                SDL_PushEvent(&focus);
+                window.processEvents();
+            }
             displayOptions(window, nativeWindow);
             fullscreenOptions(window, nativeWindow);
             if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 59.92 | 01.sg")
