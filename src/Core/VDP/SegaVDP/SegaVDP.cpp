@@ -142,7 +142,7 @@ namespace R2SEGA8::Core
                 backgroundPriority = (entry & 0x1000) && color;
             }
         }
-        unsigned spriteColor = 0, hardwareOpaque = 0;
+        unsigned spriteColor = 0;
         for (unsigned i = 0; i < spriteCount_ && (state_.registers[0] & 0x04) && (state_.registers[1] & 0x40); ++i)
         {
             const auto &sprite = sprites_[i];
@@ -155,9 +155,6 @@ namespace R2SEGA8::Core
                 color |= ((sprite.planes[plane] >> bit) & 1) << plane;
             if (!color)
                 continue;
-            if (i < hardwareSpriteCount_ && ++hardwareOpaque > 1 &&
-                !((state_.registers[0] & 0x20) && x < 8))
-                state_.status |= 0x20;
             if (!spriteColor)
                 spriteColor = color;
         }
@@ -180,6 +177,46 @@ namespace R2SEGA8::Core
             image[offset + 2] = ((color >> 4) & 3) * 85;
         }
         image[offset + 3] = 255;
+        const int dx = static_cast<int>(x) - phaserX_, dy = static_cast<int>(y) - phaserY_;
+        const bool light = phaserX_ >= 0 && phaserY_ >= 0 && dx >= -5 && dx <= 5 && dy >= -5 && dy <= 5 &&
+                           dx * dx + dy * dy <= 25 &&
+                           (image[offset] * 299 + image[offset + 1] * 587 + image[offset + 2] * 114) >= 160000;
+        if (light && !phaserLight_)
+        {
+            // O sinal óptico chega depois do pixel; jogos calibram o contador
+            // incluindo esse atraso e o deslocamento horizontal do vídeo.
+            phaserLatch_ = static_cast<std::uint8_t>(horizontalCounter() + 0x16);
+            phaserLatchPending_ = true;
+        }
+        // Persiste por parte da linha, como o sensor, para que o Z80 consiga
+        // amostrar o pulso entre leituras consecutivas da porta TH.
+        if (light)
+            phaserPulse_ = 64;
+        phaserLight_ = phaserPulse_ != 0;
+    }
+
+    void SegaVDP::detectSpriteCollision(unsigned x)
+    {
+        if (!(state_.registers[0] & 0x04) || !(state_.registers[1] & 0x40) ||
+            ((state_.registers[0] & 0x20) && x < 8))
+            return;
+        unsigned opaque = 0;
+        for (unsigned i = 0; i < hardwareSpriteCount_; ++i)
+        {
+            const auto &sprite = sprites_[i];
+            const int relativeX = static_cast<int>(x) - sprite.x;
+            if (relativeX < 0 || relativeX >= (sprite.doubleWidth ? 16 : 8))
+                continue;
+            const unsigned bit = 7 - static_cast<unsigned>(relativeX) / (sprite.doubleWidth ? 2 : 1);
+            unsigned color = 0;
+            for (unsigned plane = 0; plane < 4; ++plane)
+                color |= ((sprite.planes[plane] >> bit) & 1) << plane;
+            if (color && ++opaque > 1)
+            {
+                state_.status |= 0x20;
+                return;
+            }
+        }
     }
 
     void SegaVDP::runMasterTicks(unsigned count)
@@ -189,6 +226,8 @@ namespace R2SEGA8::Core
             state_.masterPhase ^= 1;
             if (state_.masterPhase)
                 continue;
+            if (phaserPulse_ && --phaserPulse_ == 0)
+                phaserLight_ = false;
             if (state_.dot == 0 && state_.line < Height)
             {
                 // O primeiro quadro não tem uma linha anterior para capturar R8.
@@ -202,17 +241,23 @@ namespace R2SEGA8::Core
             }
             if (state_.line < Height && state_.dot < Width)
                 drawPixel();
+            // O latch de colisão segue o processamento do pixel com atraso;
+            // continua na borda direita para incluir o último pixel ativo.
+            const unsigned collisionDelay = model_ == Model::MasterSystem ? 10 : 0;
+            if (state_.line < Height && state_.dot >= collisionDelay && state_.dot < Width + collisionDelay)
+                detectSpriteCollision(state_.dot - collisionDelay);
             if (state_.dot == Width)
                 // A busca é aproximada ao fim da linha; o hardware a distribui pela linha.
                 selectSprites((state_.line + 1) % linesPerFrame());
-            // HClock -18, -17, -16 e -15 correspondem aos dots 324–327.
-            // Os eventos são anteriores ao primeiro pixel ativo da linha seguinte.
+            // O raster usa a origem do pixel ativo; os instantes abaixo foram
+            // ajustados às leituras do diagnóstico SMS VDP Test. A fase exata
+            // da IRQ de quadro ainda não reproduz todas as medições da ROM.
             if (state_.dot == HBlankEventDot)
             {
                 state_.horizontalScroll = state_.registers[8];
-                if (state_.line == Height)
-                    state_.frameInterruptPending = true;
             }
+            if (state_.line == Height && state_.dot == HBlankEventDot - 2)
+                state_.frameInterruptPending = true;
             if (state_.dot == HBlankEventDot + 1)
             {
                 const unsigned nextLine = (state_.line + 1) % linesPerFrame();
@@ -229,9 +274,9 @@ namespace R2SEGA8::Core
                 else
                     state_.lineCounter = state_.registers[10];
             }
-            if (state_.line == Height && state_.dot == HBlankEventDot + 3)
+            if (state_.line == Height && state_.dot == HBlankEventDot - 1)
                 state_.status |= 0x80;
-            if (state_.dot == HBlankEventDot + 3 && selectedSpriteOverflow_)
+            if (state_.dot == HBlankEventDot - 1 && selectedSpriteOverflow_)
                 state_.status |= 0x40;
             if (++state_.dot == DotsPerLine)
             {

@@ -85,12 +85,19 @@ namespace R2SEGA8::Core
             MasterSystem,
             GameGear
         };
-        
+
         // Inicializa o modelo indicado com temporização NTSC.
         explicit SegaVDP(Model model) : model_(model) {}
-        
+
         // Retorna o total de linhas do quadro no perfil de temporização atual.
         unsigned linesPerFrame() const { return pal_ ? PalLinesPerFrame : LinesPerFrame; }
+
+        // Contador horizontal em pixels/2; salta de 93 para E9 durante o retorno.
+        std::uint8_t horizontalCounter() const
+        {
+            const unsigned dot = (state_.dot + 1) % DotsPerLine;
+            return static_cast<std::uint8_t>(dot < 296 ? dot / 2 : 0xe9 + (dot - 296) / 2);
+        }
 
         // A VRAM e CRAM inicializam em zero por convenção; os acessos são imediatos nesta etapa.
         std::uint8_t readData();
@@ -98,48 +105,72 @@ namespace R2SEGA8::Core
         std::uint8_t readStatus();
         void writeControl(std::uint8_t value);
         void runMasterTicks(unsigned count);
-        
+
         // Contador vertical NTSC 192 linhas: 00–DA, D5–FF; leitura sem efeitos colaterais.
         std::uint8_t verticalCounter() const
         {
             // A mudança ocorre no apagamento horizontal, antes do próximo pixel visível.
-            const unsigned line = (state_.line + (state_.dot > HBlankEventDot + 2 ? 1 : 0)) % linesPerFrame();
+            const unsigned line = (state_.line + (state_.dot >= HBlankEventDot - 1 ? 1 : 0)) % linesPerFrame();
             return static_cast<std::uint8_t>(pal_ ? (line <= 0xf2 ? line : line - 57)
                                                   : (line <= 0xda ? line : line - 6));
         }
-        
+
         // Informa se uma interrupção de linha ou quadro está habilitada e pendente.
         bool interrupt() const
         {
             return (state_.frameInterruptPending && (state_.registers[1] & 0x20)) ||
                    (state_.lineInterruptPending && (state_.registers[0] & 0x10));
         }
-        
+
         // Retorna o último quadro completo; no Game Gear expõe apenas a área central.
         VideoFrame frame() const;
-        
+
         // Ativa ou desativa a apresentação do fundo.
         void setRenderTiles(bool enabled) { renderTiles_ = enabled; }
-        
+
         // Ativa ou desativa a apresentação dos sprites.
         void setRenderSprites(bool enabled) { renderSprites_ = enabled; }
-        
+
         // Configura a seleção de sprites além do limite físico por linha.
         void setSpriteUnlimited(bool enabled) { spriteUnlimited_ = enabled; }
 
         // Permite validar a interface sem alterar latches ou memórias.
         const State &state() const { return state_; }
-        
+
+        void setLightPhaserPosition(int x, int y)
+        {
+            phaserX_ = x;
+            phaserY_ = y;
+            if (x < 0 || y < 0)
+            {
+                phaserLight_ = false;
+                phaserPulse_ = 0;
+            }
+        }
+        bool lightPhaserLight() const { return phaserLight_; }
+        bool takeLightPhaserLatch(std::uint8_t &value)
+        {
+            if (!phaserLatchPending_)
+                return false;
+            value = phaserLatch_;
+            phaserLatchPending_ = false;
+            return true;
+        }
+
         // Copia o estado, a imagem e a paleta específica do modelo para o snapshot.
         void snapshot(Snapshot &snapshot) const;
-        
+
         // Valida e restaura o snapshot de vídeo do modelo atual.
         void restore(const Snapshot &snapshot);
 
     private:
-        // HClock -18, em relação ao início dos 256 pixels ativos.
-        static constexpr unsigned HBlankEventDot = DotsPerLine - 18;
+        // Referência interna dos eventos em HBlank, anterior ao próximo pixel ativo.
+        static constexpr unsigned HBlankEventDot = DotsPerLine - 24;
         bool pal_ = false;
+        int phaserX_ = -1, phaserY_ = -1;
+        bool phaserLight_ = false, phaserLatchPending_ = false;
+        unsigned phaserPulse_ = 0;
+        std::uint8_t phaserLatch_ = 0;
         Model model_ = Model::MasterSystem;
         std::array<std::uint8_t, 64> gameGearCram_{};
         std::uint8_t gameGearCramLatch_ = 0;
@@ -155,6 +186,8 @@ namespace R2SEGA8::Core
         void incrementAddress();
         // Compõe o pixel atual de fundo, sprites e paleta.
         void drawPixel();
+        // Atualiza a colisão com o atraso de processamento em relação ao pixel desenhado.
+        void detectSpriteCollision(unsigned x);
         // Seleciona os sprites da linha e registra o excesso.
         void selectSprites(unsigned line);
         // Prepara os dados dos sprites selecionados para o desenho da linha.
