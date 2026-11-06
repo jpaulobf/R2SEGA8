@@ -11,7 +11,7 @@ namespace R2SEGA8::Core
     {
         std::vector<std::uint8_t> data;
         StateArchive ar(data);
-        std::uint32_t magic = 0x31534d53, version = 1;
+        std::uint32_t magic = 0x31534d53, version = 2;
         bool pal = pal_, hasCartRam = !cartridge_.ram().empty();
         std::uint64_t hash = Common::fnv1a64(cartridge_.rom()), size = cartridge_.rom().size();
         auto cpuState = cpu().snapshot();
@@ -28,6 +28,8 @@ namespace R2SEGA8::Core
         video->stateArchive(ar);
         audio.stateArchive(ar);
         ar(ram, cartRam, banks, mapper, buttons, frame);
+        auto ioControl = ioControl_, horizontalLatch = horizontalLatch_;
+        ar(ioControl, horizontalLatch);
         auto checksum = Common::fnv1a64(data);
         ar(checksum);
         return data;
@@ -48,7 +50,7 @@ namespace R2SEGA8::Core
         bool pal = false, hasCartRam = false;
         std::uint64_t hash = 0, size = 0;
         ar(magic, version, pal, hash, size, hasCartRam);
-        if (magic != 0x31534d53 || version != 1 || pal != pal_ ||
+        if (magic != 0x31534d53 || (version != 1 && version != 2) || pal != pal_ ||
             hash != Common::fnv1a64(cartridge_.rom()) || size != cartridge_.rom().size())
             throw std::runtime_error("Save state is incompatible with this system, ROM or console profile.");
         auto cpuState = cpu().snapshot();
@@ -64,6 +66,9 @@ namespace R2SEGA8::Core
         video->stateArchive(ar);
         audio.stateArchive(ar);
         ar(ram, cartRam, banks, mapper, buttons, frame);
+        std::uint8_t ioControl = 0xff, horizontalLatch = 0;
+        if (version >= 2)
+            ar(ioControl, horizontalLatch);
         ar.finish();
         if ((mapper & 0x08) && !hasCartRam)
             throw std::runtime_error("Invalid save state cartridge RAM.");
@@ -74,6 +79,8 @@ namespace R2SEGA8::Core
         cartridge_.ram() = std::move(cartRam);
         mapper_.setState({banks, mapper});
         controls_.setInput(buttons, frame);
+        ioControl_ = ioControl;
+        horizontalLatch_ = horizontalLatch;
     }
 
     MasterSystem::MasterSystem(Core::Cartridge cartridge, bool pal)
@@ -107,10 +114,36 @@ namespace R2SEGA8::Core
 
     std::uint8_t MasterSystem::input(std::uint16_t port)
     {
-        if ((port & 0xc1) == 0x40)
-            return vdp_.verticalCounter();
+        if ((port & 0xc0) == 0x40)
+            return (port & 1) ? horizontalLatch_ : vdp_.verticalCounter();
         if ((port & 0xc0) == 0xc0)
-            return (port & 1) ? controls_.joypad().readOdd() : controls_.joypad().readEven();
+        {
+            auto value = (port & 1) ? controls_.joypad().readOdd() : controls_.joypad().readEven();
+            if (phaserEnabled_)
+            {
+                if (port & 1)
+                {
+                    if (vdp_.lightPhaserLight())
+                        value &= ~0x40;
+                }
+                else
+                    value = static_cast<std::uint8_t>((value | 0x3f) & (phaserTrigger_ ? ~0x10 : 0xff));
+            }
+            const auto applyLine = [&](unsigned direction, unsigned level, unsigned bit)
+            {
+                if (!(ioControl_ & (1u << direction)))
+                    value = static_cast<std::uint8_t>((value & ~(1u << bit)) | ((ioControl_ >> level & 1u) << bit));
+            };
+            if (port & 1)
+            {
+                applyLine(2, 6, 3);
+                applyLine(1, 5, 6);
+                applyLine(3, 7, 7);
+            }
+            else
+                applyLine(0, 4, 5);
+            return value;
+        }
         if ((port & 0xc0) != 0x80)
             return 0xff;
         const auto value = (port & 1) ? vdp_.readStatus() : vdp_.readData();
@@ -132,6 +165,18 @@ namespace R2SEGA8::Core
 
     void MasterSystem::output(std::uint16_t port, std::uint8_t value)
     {
+        if ((port & 0xc1) == 0x01)
+        {
+            const auto thHigh = [](std::uint8_t control, unsigned direction, unsigned level)
+            {
+                return (control & (1u << direction)) || (control & (1u << level));
+            };
+            if ((!thHigh(ioControl_, 1, 5) && thHigh(value, 1, 5)) ||
+                (!thHigh(ioControl_, 3, 7) && thHigh(value, 3, 7)))
+                horizontalLatch_ = vdp_.horizontalCounter();
+            ioControl_ = value;
+            return;
+        }
         if ((port & 0xc0) == 0x40)
         {
             psg_.write(value);
@@ -151,6 +196,9 @@ namespace R2SEGA8::Core
         if (!peripheralClockDue())
             return;
         vdp_.runMasterTicks(3);
+        std::uint8_t phaserLatch = 0;
+        if (vdp_.takeLightPhaserLatch(phaserLatch) && phaserEnabled_ && (ioControl_ & 0x02))
+            horizontalLatch_ = phaserLatch;
         psg_.tick();
         controls_.updateFrame(vdp_.state().completedFrames);
         cpu().setIRQ(vdp_.interrupt());
