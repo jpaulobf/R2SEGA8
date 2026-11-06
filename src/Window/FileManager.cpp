@@ -1,4 +1,5 @@
 #include "FileManager.h"
+#include "Common/RomFile.h"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -140,7 +141,11 @@ namespace R2SEGA8::Window
                        [](unsigned char c)
                        { return static_cast<char>(std::tolower(c)); });
         if (extension == ".zip")
-            throw std::runtime_error("ZIP archives are not supported yet. Extract a supported ROM first.");
+        {
+            std::string name;
+            Common::readRomFile(path, &name);
+            extension = std::filesystem::u8path(name).extension().u8string();
+        }
         if (extension == ".bin")
             throw std::runtime_error("Automatic system detection for BIN files is not available yet.");
         const auto system = Common::systemFromExtension(extension);
@@ -268,7 +273,7 @@ namespace R2SEGA8::Window
                 return;
             }
         }
-        ImGui::TextUnformatted("Click a ROM to load: .sg, .sc, .sms, .gg");
+        ImGui::TextUnformatted("Click a ROM to load: .sg, .sc, .sms, .gg, .zip");
         drawDriveSelector();
         ImGui::TextWrapped("Path: %s", pathLabel_.c_str());
         if (ImGui::Button("Up"))

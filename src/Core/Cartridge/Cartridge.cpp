@@ -23,10 +23,12 @@ namespace R2SEGA8::Core
     } // namespace
 
     Cartridge::Cartridge(const std::filesystem::path &path, CartridgeProfile profile)
-        : path_(std::filesystem::absolute(path).lexically_normal()), rom_(Common::readRomFile(path_))
+        : path_(std::filesystem::absolute(path).lexically_normal()), rom_()
     {
         using Common::SystemType;
-        suggested_ = Common::systemFromExtension(path_.extension().u8string());
+        std::string romName;
+        rom_ = Common::readRomFile(path_, &romName);
+        suggested_ = Common::systemFromExtension(std::filesystem::u8path(romName).extension().u8string());
 
         // MAME hash/sg1000.xml: The Castle (Japan), MPR-10159, 32 KiB + 8 KiB de RAM.
         // Somente essa imagem catalogada recebe o perfil automaticamente; ROMs desconhecidas continuam simples.
