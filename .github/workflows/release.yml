@@ -31,11 +31,16 @@ jobs:
       - name: Configure CMake
         # Seleciona o compilador MinGW para o build Windows.
         run: |
-          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
 
       - name: Build Project
         run: |
           cmake --build build --config Release --target R2SEGA8 --parallel
+
+      - name: Test ZIP loading
+        run: |
+          cmake --build build --config Release --target zip_rom_tests --parallel
+          ctest --test-dir build -R "^zip_rom_tests$" --output-on-failure
 
       - name: Prepare Artifacts
         # Inclui o runtime do MinGW para executar em máquinas sem o compilador.
@@ -100,10 +105,15 @@ jobs:
 
       - name: Configure CMake
         # Configura Release sem compilar os testes.
-        run: cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+        run: cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 
       - name: Build Project
         run: cmake --build build-linux --config Release --target R2SEGA8 --parallel 2
+
+      - name: Test ZIP loading
+        run: |
+          cmake --build build-linux --config Release --target zip_rom_tests --parallel 2
+          ctest --test-dir build-linux -R "^zip_rom_tests$" --output-on-failure
 
       - name: Prepare Linux package
         run: |
