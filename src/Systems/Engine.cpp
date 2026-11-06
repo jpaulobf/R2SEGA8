@@ -3,6 +3,7 @@
 #include "BoardFactory.h"
 #include "Core/Audio/SN76489/SN76489.h"
 #include "Core/CPU/Z80/Disassembler.h"
+#include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "FrameCounter.h"
 #include "FramePacer.h"
 #include "Input.h"
@@ -300,6 +301,11 @@ int R2SEGA8::Systems::Engine::run()
         };
         callbacks.inputEvent = [&](const SDL_Event &event, bool enabled)
         { input.handleEvent(event, enabled); };
+        callbacks.lightPhaser = [&](int x, int y, bool trigger)
+        {
+            if (auto *sms = dynamic_cast<R2SEGA8::Core::MasterSystem *>(board.get()))
+                sms->setLightPhaser(executionSettings.lightPhaserEnabled && !emulationPaused, x, y, trigger);
+        };
         callbacks.inputAvailability = [&](bool enabled)
         {
             inputEnabled = enabled;

@@ -15,20 +15,20 @@ namespace R2SEGA8::Systems
             mapKey(key, Button::Left);
         for (auto key : {SDLK_D, SDLK_RIGHT})
             mapKey(key, Button::Right);
-        mapKey(SDLK_K, Button::A);
-        mapKey(SDLK_J, Button::B);
-        mapKey(SDLK_I, Button::TurboA);
-        mapKey(SDLK_U, Button::TurboB);
+        mapKey(SDLK_K, Button::B);
+        mapKey(SDLK_J, Button::A);
+        mapKey(SDLK_I, Button::TurboB);
+        mapKey(SDLK_U, Button::TurboA);
         mapKey(SDLK_BACKSPACE, Button::Select);
         mapKey(SDLK_RETURN, Button::Start);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_UP, Button::Up);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::Down);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::Left);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::Right);
-        mapGamepad(SDL_GAMEPAD_BUTTON_EAST, Button::A);
-        mapGamepad(SDL_GAMEPAD_BUTTON_SOUTH, Button::B);
-        mapGamepad(SDL_GAMEPAD_BUTTON_NORTH, Button::TurboA);
-        mapGamepad(SDL_GAMEPAD_BUTTON_WEST, Button::TurboB);
+        mapGamepad(SDL_GAMEPAD_BUTTON_EAST, Button::B);
+        mapGamepad(SDL_GAMEPAD_BUTTON_SOUTH, Button::A);
+        mapGamepad(SDL_GAMEPAD_BUTTON_NORTH, Button::TurboB);
+        mapGamepad(SDL_GAMEPAD_BUTTON_WEST, Button::TurboA);
         mapGamepad(SDL_GAMEPAD_BUTTON_BACK, Button::Select);
         mapGamepad(SDL_GAMEPAD_BUTTON_START, Button::Start);
     }
@@ -207,14 +207,14 @@ namespace R2SEGA8::Systems
             if (settings.invertT1112Enabled)
             {
                 buttons &= ~actionMask;
-                if (original & Common::mask(Button::TurboA))
-                    buttons |= Common::mask(Button::TurboB);
-                if (original & Common::mask(Button::TurboB))
-                    buttons |= Common::mask(Button::B);
-                if (original & Common::mask(Button::B))
+                if (original & Common::mask(Button::TurboA)) // u
                     buttons |= Common::mask(Button::A);
-                if (original & Common::mask(Button::A))
+                if (original & Common::mask(Button::TurboB)) // i
                     buttons |= Common::mask(Button::TurboA);
+                if (original & Common::mask(Button::B)) // k
+                    buttons |= Common::mask(Button::TurboB);
+                if (original & Common::mask(Button::A)) // j
+                    buttons |= Common::mask(Button::B);
             }
             else if (settings.invert12Enabled)
             {
