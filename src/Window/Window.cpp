@@ -134,15 +134,22 @@ namespace R2SEGA8::Window
         bool rendererReady = false;
         bool running = true, focused = false, minimized = false;
         // Consulta somente estado da interface; não conhece mapeamentos ou periféricos emulados.
-        bool acceptsInput() const
+        bool acceptsPointer() const
         {
             if (!contextReady || !running || !focused || minimized || files.isOpen())
                 return false;
             if (fullscreen != Fullscreen::None)
                 return true;
+            return !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+        }
+        bool acceptsInput() const
+        {
+            if (!acceptsPointer())
+                return false;
+            if (fullscreen != Fullscreen::None)
+                return true;
             const auto &io = ImGui::GetIO();
-            return !io.WantCaptureKeyboard && !io.WantTextInput &&
-                   !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+            return !io.WantCaptureKeyboard && !io.WantTextInput;
         }
         // Publica pausa de menus e disponibilidade de entrada também nos quadros sem eventos SDL.
         void notifyInput()
@@ -157,6 +164,8 @@ namespace R2SEGA8::Window
             }
             if (callbacks.inputAvailability)
                 callbacks.inputAvailability(acceptsInput());
+            if (callbacks.lightPhaser && !acceptsPointer())
+                callbacks.lightPhaser(-1, -1, false);
         }
         // Compõe FPS antes do nome da ROM e evita atualizar o título nativo quando o texto não mudou.
         void updateTitle()
@@ -299,6 +308,16 @@ namespace R2SEGA8::Window
                 // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
                 const auto position = ImGui::GetCursorScreenPos();
                 ImGui::SetCursorScreenPos(ImVec2(position.x + (available.x - size.x) * 0.5f, position.y + (available.y - size.y) * 0.5f));
+                if (callbacks.lightPhaser)
+                {
+                    const auto origin = ImGui::GetCursorScreenPos();
+                    const auto mouse = ImGui::GetIO().MousePos;
+                    const bool inside = acceptsPointer() && mouse.x >= origin.x && mouse.y >= origin.y &&
+                                        mouse.x < origin.x + size.x && mouse.y < origin.y + size.y;
+                    const int x = inside ? static_cast<int>((mouse.x - origin.x) * visibleWidth / size.x) + static_cast<int>(crop) : -1;
+                    const int y = inside ? static_cast<int>((mouse.y - origin.y) * nativeSize.height / size.y) : -1;
+                    callbacks.lightPhaser(x, y, acceptsPointer() && ImGui::IsMouseDown(ImGuiMouseButton_Left));
+                }
                 if (pixelArt)
                 {
                     const auto origin = ImGui::GetCursorScreenPos();
@@ -707,6 +726,8 @@ namespace R2SEGA8::Window
                 if (ImGui::BeginMenu("Input", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
                 {
                     auto settings = state.callbacks.executionSettings();
+                    if (ImGui::MenuItem("Enable Light Phaser", nullptr, &settings.lightPhaserEnabled))
+                        state.callbacks.setExecutionSettings(settings);
                     if (ImGui::MenuItem("Invert buttons: 1 and 2", nullptr, &settings.invert12Enabled))
                     {
                         settings.invertT1112Enabled = false;
