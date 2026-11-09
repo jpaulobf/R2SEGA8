@@ -1,0 +1,9 @@
+# O shader 3D padrão espera uma imagem com resolução interna 2x.
+shaders = 2
+shader0 = ../stock.cg
+filter_linear0 = false
+scale_type0 = source
+scale0 = 2.0
+shader1 = shaders/crt-hyllian-3d.cg
+filter_linear1 = true
+srgb_framebuffer1 = true

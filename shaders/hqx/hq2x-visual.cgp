@@ -1,0 +1,11 @@
+# Original single-pass HQ2x followed by a nearest-neighbor viewport copy.
+shaders = 2
+shader0 = single-pass/shader-files/hq2x.cg
+filter_linear0 = false
+scale_type0 = source
+scale0 = 2.0
+shader1 = ../stock.cg
+filter_linear1 = false
+textures = LUT
+LUT = resources/hq2x.png
+LUT_linear = false
