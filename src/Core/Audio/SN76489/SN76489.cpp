@@ -22,7 +22,11 @@ namespace R2SEGA8::Core
     {
         state_ = {};
         if (variant_ == Variant::Sega)
+        {
             state_.noiseShift = 0x8000;
+            // Medições do PSG Sega: após reset, bytes de dados selecionam o volume do canal 2.
+            state_.latch = 3;
+        }
         if (variant_ == Variant::Sega || initiallyMuted_)
             state_.attenuation.fill(15);
         samplePhase_ = 0;
