@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace R2SEGA8::Core
@@ -33,6 +34,9 @@ namespace R2SEGA8::Core
         // e cabeçalho. Propaga as exceções de acesso ao arquivo e leitura.
         // O perfil explícito permite configurar cartuchos sem depender de seu nome de arquivo.
         explicit Cartridge(const std::filesystem::path &path, CartridgeProfile profile = CartridgeProfile::Automatic);
+        // Usa uma imagem já lida e validada, evitando reler um ZIP entre a seleção e a carga.
+        Cartridge(const std::filesystem::path &path, std::vector<std::uint8_t> rom, std::string romName,
+                  CartridgeProfile profile = CartridgeProfile::Automatic);
 
         // Retorna o perfil resolvido; Automatic nunca permanece após o carregamento.
         CartridgeProfile profile() const { return profile_; }
@@ -59,6 +63,7 @@ namespace R2SEGA8::Core
         bool conflictingHints() const { return conflicting_; }
 
     private:
+        void initialize(const std::string &romName, CartridgeProfile profile);
         std::filesystem::path path_;
         std::vector<std::uint8_t> rom_;
         std::vector<std::uint8_t> ram_;

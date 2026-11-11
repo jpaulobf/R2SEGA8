@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace R2SEGA8::Core
 {
@@ -25,9 +26,23 @@ namespace R2SEGA8::Core
     Cartridge::Cartridge(const std::filesystem::path &path, CartridgeProfile profile)
         : path_(std::filesystem::absolute(path).lexically_normal()), rom_()
     {
-        using Common::SystemType;
         std::string romName;
         rom_ = Common::readRomFile(path_, &romName);
+        initialize(romName, profile);
+    }
+
+    Cartridge::Cartridge(const std::filesystem::path &path, std::vector<std::uint8_t> rom, std::string romName,
+                         CartridgeProfile profile)
+        : path_(std::filesystem::absolute(path).lexically_normal()), rom_(std::move(rom))
+    {
+        if (rom_.empty() || rom_.size() > Common::MaxRomFileSize)
+            throw std::runtime_error("Invalid ROM image size.");
+        initialize(romName, profile);
+    }
+
+    void Cartridge::initialize(const std::string &romName, CartridgeProfile profile)
+    {
+        using Common::SystemType;
         suggested_ = Common::systemFromExtension(std::filesystem::u8path(romName).extension().u8string());
 
         // MAME hash/sg1000.xml: The Castle (Japan), MPR-10159, 32 KiB + 8 KiB de RAM.
