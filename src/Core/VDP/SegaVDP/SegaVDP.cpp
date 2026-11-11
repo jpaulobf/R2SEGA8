@@ -46,6 +46,7 @@ namespace R2SEGA8::Core
         images_ = s.images;
         gameGearCram_ = s.gameGearCram;
         gameGearCramLatch_ = s.gameGearCramLatch;
+        prepareSpritePixels();
     }
 
     void SegaVDP::selectSprites(unsigned line)
@@ -79,7 +80,10 @@ namespace R2SEGA8::Core
     {
         spriteCount_ = hardwareSpriteCount_ = 0;
         if (!(state_.registers[0] & 0x04))
+        {
+            prepareSpritePixels();
             return;
+        }
         const unsigned base = (state_.registers[5] & 0x7e) << 7;
         const unsigned height = (state_.registers[1] & 2) ? 16 : 8;
         const unsigned scale = (state_.registers[1] & 1) ? 2 : 1;
@@ -104,6 +108,34 @@ namespace R2SEGA8::Core
         // Perfil SMS1: os últimos quatro sprites selecionados só ampliam verticalmente.
         for (unsigned i = 0; i < spriteCount_; ++i)
             sprites_[i].doubleWidth = scale == 2 && (model_ == Model::GameGear || i >= 8 || i + 4 < hardwareSpriteCount_);
+        prepareSpritePixels();
+    }
+
+    void SegaVDP::prepareSpritePixels()
+    {
+        spritePixels_.fill(0);
+        spriteOverlaps_.fill(0);
+        for (unsigned i = 0; i < spriteCount_; ++i)
+        {
+            const auto &sprite = sprites_[i];
+            const unsigned width = sprite.doubleWidth ? 16 : 8;
+            for (unsigned offset = 0; offset < width; ++offset)
+            {
+                const int x = sprite.x + static_cast<int>(offset);
+                if (x < 0 || x >= static_cast<int>(Width))
+                    continue;
+                const unsigned bit = 7 - offset / (sprite.doubleWidth ? 2 : 1);
+                unsigned color = 0;
+                for (unsigned plane = 0; plane < 4; ++plane)
+                    color |= ((sprite.planes[plane] >> bit) & 1) << plane;
+                if (!color)
+                    continue;
+                if (!spritePixels_[x])
+                    spritePixels_[x] = static_cast<std::uint8_t>(color);
+                if (i < hardwareSpriteCount_ && spriteOverlaps_[x] < 2)
+                    ++spriteOverlaps_[x];
+            }
+        }
     }
 
     void SegaVDP::drawPixel()
@@ -142,22 +174,7 @@ namespace R2SEGA8::Core
                 backgroundPriority = (entry & 0x1000) && color;
             }
         }
-        unsigned spriteColor = 0;
-        for (unsigned i = 0; i < spriteCount_ && (state_.registers[0] & 0x04) && (state_.registers[1] & 0x40); ++i)
-        {
-            const auto &sprite = sprites_[i];
-            const int relativeX = static_cast<int>(x) - sprite.x;
-            if (relativeX < 0 || relativeX >= (sprite.doubleWidth ? 16 : 8))
-                continue;
-            const unsigned bit = 7 - static_cast<unsigned>(relativeX) / (sprite.doubleWidth ? 2 : 1);
-            unsigned color = 0;
-            for (unsigned plane = 0; plane < 4; ++plane)
-                color |= ((sprite.planes[plane] >> bit) & 1) << plane;
-            if (!color)
-                continue;
-            if (!spriteColor)
-                spriteColor = color;
-        }
+        const unsigned spriteColor = (state_.registers[0] & 0x04) && (state_.registers[1] & 0x40) ? spritePixels_[x] : 0;
         if (spriteColor && renderSprites_ && !backgroundPriority && !((state_.registers[0] & 0x20) && x < 8))
             paletteIndex = 16 + spriteColor;
         auto &image = images_[state_.drawingImage];
@@ -200,23 +217,8 @@ namespace R2SEGA8::Core
         if (!(state_.registers[0] & 0x04) || !(state_.registers[1] & 0x40) ||
             ((state_.registers[0] & 0x20) && x < 8))
             return;
-        unsigned opaque = 0;
-        for (unsigned i = 0; i < hardwareSpriteCount_; ++i)
-        {
-            const auto &sprite = sprites_[i];
-            const int relativeX = static_cast<int>(x) - sprite.x;
-            if (relativeX < 0 || relativeX >= (sprite.doubleWidth ? 16 : 8))
-                continue;
-            const unsigned bit = 7 - static_cast<unsigned>(relativeX) / (sprite.doubleWidth ? 2 : 1);
-            unsigned color = 0;
-            for (unsigned plane = 0; plane < 4; ++plane)
-                color |= ((sprite.planes[plane] >> bit) & 1) << plane;
-            if (color && ++opaque > 1)
-            {
-                state_.status |= 0x20;
-                return;
-            }
-        }
+        if (spriteOverlaps_[x] > 1)
+            state_.status |= 0x20;
     }
 
     void SegaVDP::runMasterTicks(unsigned count)

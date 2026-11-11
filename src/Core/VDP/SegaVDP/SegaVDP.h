@@ -180,6 +180,8 @@ namespace R2SEGA8::Core
         bool selectedSpriteOverflow_ = false, spriteSelectionValid_ = false;
         std::array<SpriteLine, 64> sprites_{};
         unsigned spriteCount_ = 0, hardwareSpriteCount_ = 0;
+        // Derivados dos sprites da linha; restaurados a partir do snapshot sem alterar seu formato.
+        std::array<std::uint8_t, Width> spritePixels_{}, spriteOverlaps_{};
         std::array<std::array<std::uint8_t, FrameBytes>, 2> images_{};
         bool renderTiles_ = true, renderSprites_ = true, spriteUnlimited_ = true;
         // Avança o endereço de VRAM ou CRAM respeitando o espaço de 14 bits.
@@ -192,5 +194,7 @@ namespace R2SEGA8::Core
         void selectSprites(unsigned line);
         // Prepara os dados dos sprites selecionados para o desenho da linha.
         void prepareSprites();
+        // Compõe os pixels e a sobreposição dos sprites já buscados para a linha atual.
+        void prepareSpritePixels();
     };
 }

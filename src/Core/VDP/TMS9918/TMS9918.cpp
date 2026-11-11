@@ -424,12 +424,18 @@ namespace R2SEGA8::Core
             state_.nextSpriteCount = target < Height && state_.spriteTargetLine == target ? state_.selectedSprites : 0;
         }
         // Y/X/nome/cor/padrão esquerdo/direito são buscados separadamente, inclusive o segundo padrão de SIZE=0.
-        constexpr unsigned FetchDots[4][6] = {
-            {250, 252, 254, 256, 258, 260}, {262, 264, 266, 268, 270, 272}, {274, 276, 288, 290, 292, 294}, {296, 298, 300, 302, 304, 306}};
-        for (unsigned index = 0; spritesEnabled() && index < 4 && index < state_.nextSpriteCount; ++index)
-            for (unsigned phase = 0; phase < 6; ++phase)
-                if (dot == FetchDots[index][phase])
-                    fetchSprite(state_.nextSprites[index], phase, target);
+        // Cada dot tem no máximo uma busca física. Codifica índice * 8 + fase;
+        // 255 marca os dots livres entre as buscas do terceiro sprite.
+        constexpr std::uint8_t FetchSlot[29] = {
+            0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13,
+            16, 17, 255, 255, 255, 255, 255, 18, 19, 20, 21,
+            24, 25, 26, 27, 28, 29};
+        if (dot >= 250 && dot <= 306 && !(dot & 1) && spritesEnabled())
+        {
+            const auto slot = FetchSlot[(dot - 250) / 2];
+            if (slot != 255 && (slot >> 3) < state_.nextSpriteCount)
+                fetchSprite(state_.nextSprites[slot >> 3], slot & 7, target);
+        }
     }
 
     std::uint8_t TMS9918::spriteColor(const std::array<Sprite, 32> &sprites, unsigned count, int x)
