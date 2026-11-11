@@ -417,10 +417,7 @@ int R2SEGA8::Systems::Engine::run()
                 board->setInput(buttons);
             if (loopMode == LoopMode::Hardware)
                 pacer.advance();
-            const bool vsyncFrameDue = loopMode != LoopMode::VSync || Clock::now() >= pacer.deadline();
-            if (loopMode == LoopMode::VSync && vsyncFrameDue)
-                pacer.advance();
-            if (timedBoard() && !emulationPaused && vsyncFrameDue)
+            if (timedBoard() && !emulationPaused)
             {
                 // Sem limite, vários quadros por apresentação reduzem a dependência do custo do renderer.
                 // O modo nativo continua recuperando até quatro quadros; VSync apresenta cada quadro.

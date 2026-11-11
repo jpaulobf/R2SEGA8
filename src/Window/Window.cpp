@@ -74,10 +74,15 @@ namespace R2SEGA8::Window
         bool resolutionMode(int index, SDL_DisplayMode &result)
         {
             int count = 0;
-            auto modes = SDL_GetFullscreenDisplayModes(SDL_GetDisplayForWindow(window), &count);
+            const auto display = SDL_GetDisplayForWindow(window);
+            const auto *desktop = SDL_GetDesktopDisplayMode(display);
+            if (!desktop || desktop->refresh_rate <= 0)
+                return false;
+            auto modes = SDL_GetFullscreenDisplayModes(display, &count);
             bool found = false;
             for (int i = 0; i < count; ++i)
-                if (modes[i]->w == resolutions[index].width && modes[i]->h == resolutions[index].height)
+                if (modes[i]->w == resolutions[index].width && modes[i]->h == resolutions[index].height &&
+                    std::abs(modes[i]->refresh_rate - desktop->refresh_rate) < 0.01f)
                 {
                     result = *modes[i];
                     found = true;
@@ -654,8 +659,9 @@ namespace R2SEGA8::Window
                 continue;
             }
             if (ownEvent && state.focused && !state.minimized && !state.files.isOpen() && event.type == SDL_EVENT_KEY_DOWN &&
-                !event.key.repeat && event.key.key == SDLK_F && (event.key.mod & SDL_KMOD_CTRL) &&
-                !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI)))
+                !event.key.repeat &&
+                ((event.key.key == SDLK_F && (event.key.mod & SDL_KMOD_CTRL) && !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_SHIFT | SDL_KMOD_GUI))) ||
+                 (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT) && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT | SDL_KMOD_GUI)))))
             {
                 state.setFullscreen(state.fullscreen == Impl::Fullscreen::None ? Impl::Fullscreen::Aspect : Impl::Fullscreen::None);
                 continue;
@@ -780,6 +786,18 @@ namespace R2SEGA8::Window
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
+                    if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
+                        state.callbacks.setExecutionSettings(settings);
+                    ImGui::Separator();
+                    for (unsigned scale = 1; scale <= 5; ++scale)
+                    {
+                        char label[] = "1X", shortcut[] = "Ctrl+1";
+                        label[0] = static_cast<char>('0' + scale);
+                        shortcut[5] = static_cast<char>('0' + scale);
+                        if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
+                            state.pendingDisplayScale = scale;
+                    }
+                    ImGui::Separator();
                     if (ImGui::BeginMenu("FullScreen Resolution"))
                     {
                         if (ImGui::MenuItem("Desktop Resolution", nullptr, state.resolution < 0))
@@ -798,22 +816,9 @@ namespace R2SEGA8::Window
                             }
                         ImGui::EndMenu();
                     }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
-                        state.callbacks.setExecutionSettings(settings);
-                    ImGui::Separator();
-                    for (unsigned scale = 1; scale <= 5; ++scale)
-                    {
-                        char label[] = "1X", shortcut[] = "Ctrl+1";
-                        label[0] = static_cast<char>('0' + scale);
-                        shortcut[5] = static_cast<char>('0' + scale);
-                        if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
-                            state.pendingDisplayScale = scale;
-                    }
-                    ImGui::Separator();
                     if (ImGui::MenuItem("Fullscreen Stretched"))
                         state.pendingFullscreen = Impl::Fullscreen::Stretched;
-                    if (ImGui::MenuItem("Fullscreen", "Ctrl+F"))
+                    if (ImGui::MenuItem("Fullscreen", "Ctrl+F ou Alt+Enter"))
                         state.pendingFullscreen = Impl::Fullscreen::Aspect;
                     ImGui::Separator();
                     if (ImGui::MenuItem("Bilinear Filter", nullptr, &settings.bilinearFilterEnabled, configurable))
