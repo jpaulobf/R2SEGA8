@@ -1,5 +1,6 @@
 #include "FileManager.h"
 #include "Common/RomFile.h"
+#include "Core/Cartridge/Cartridge.h"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -140,22 +141,18 @@ namespace R2SEGA8::Window
         std::transform(extension.begin(), extension.end(), extension.begin(),
                        [](unsigned char c)
                        { return static_cast<char>(std::tolower(c)); });
-        if (extension == ".zip")
-        {
-            std::string name;
-            Common::readRomFile(path, &name);
-            extension = std::filesystem::u8path(name).extension().u8string();
-        }
         if (extension == ".bin")
             throw std::runtime_error("Automatic system detection for BIN files is not available yet.");
-        const auto system = Common::systemFromExtension(extension);
-        if (system == Common::SystemType::Unknown)
+        if (extension != ".zip" && Common::systemFromExtension(extension) == Common::SystemType::Unknown)
             throw std::runtime_error("Unsupported ROM extension.");
-        if (!std::filesystem::is_regular_file(path))
-            throw std::runtime_error("The selected ROM file is unavailable.");
         if (!openHandler_)
             throw std::runtime_error("ROM loading is unavailable.");
-        openHandler_(path, system);
+        std::string romName;
+        auto rom = Common::readRomFile(path, &romName);
+        const auto system = Common::systemFromExtension(std::filesystem::u8path(romName).extension().u8string());
+        if (system == Common::SystemType::Unknown)
+            throw std::runtime_error("Unsupported ROM extension.");
+        openHandler_(Core::Cartridge(path, std::move(rom), std::move(romName)), system);
         try
         {
             recordRecent(path);

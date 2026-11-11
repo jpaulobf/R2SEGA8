@@ -4,6 +4,7 @@
 #include "Core/CPU/Z80/Z80.h"
 #include "Common/ExecutionSettings.h"
 #include "Common/SystemType.h"
+#include "Core/Cartridge/Cartridge.h"
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -44,9 +45,9 @@ namespace R2SEGA8::Window
     // Contrato da interface: ações e consultas são atendidas pelo chamador.
     struct Callbacks
     {
-        using OpenRom = std::function<void(const std::filesystem::path &, Common::SystemType)>;
+        using OpenRom = std::function<void(Core::Cartridge, Common::SystemType)>;
 
-        // Solicita carregamento imediato com o sistema da extensão; falhas mantêm o diálogo aberto.
+        // Entrega a imagem já lida com o sistema da extensão; falhas mantêm o diálogo aberto.
         OpenRom openRom;
 
         // Consulta a presença de uma ROM para habilitar as ações de execução.
