@@ -331,7 +331,9 @@ int R2SEGA8::Systems::Engine::run()
         // Apenas mudanças da pausa efetiva descartam áudio e prazos; fechar menu não desfaz Pause/Break.
         const auto synchronizePause = [&]()
         {
-            const bool next = pause.paused() || debugPaused || window.isMinimized();
+            pause.setMinimized(window.isMinimized());
+            pause.setDebugPaused(debugPaused);
+            const bool next = pause.paused();
             if (next == emulationPaused)
                 return;
             const auto now = Clock::now();
