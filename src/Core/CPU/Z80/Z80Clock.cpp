@@ -128,6 +128,8 @@ namespace R2SEGA8::Core
             {
                 if (cycle_.kind == CycleKind::Reti)
                 {
+                    if (completedCount_ == completed_.size())
+                        throw std::logic_error("Z80 micro-operation capacity exceeded.");
                     bus_.reti();
                     completed_[completedCount_++] = cycle_;
                     continue;
@@ -319,10 +321,15 @@ namespace R2SEGA8::Core
         { return static_cast<unsigned>(c.kind) <= static_cast<unsigned>(CycleKind::Reti) &&
                  c.phase <= c.length && c.length <= 64; };
         if (!validState(saved.state) || !validState(saved.initial) || saved.completedCount > saved.completed.size() ||
-            !validCycle(saved.cycle))
+            !validCycle(saved.cycle) ||
+            (saved.active && (saved.cycle.kind == CycleKind::Reti || saved.cycle.length == 0 ||
+                              saved.cycle.phase >= saved.cycle.length || saved.completedCount == saved.completed.size())))
             throw std::invalid_argument("Invalid Z80 snapshot.");
         for (unsigned i = 0; i < saved.completedCount; ++i)
-            if (!validCycle(saved.completed[i]))
+            if (!validCycle(saved.completed[i]) ||
+                (saved.completed[i].kind == CycleKind::Reti
+                     ? saved.completed[i].length != 0 || saved.completed[i].phase != 0
+                     : saved.completed[i].length == 0 || saved.completed[i].phase != saved.completed[i].length))
                 throw std::invalid_argument("Invalid Z80 cycle snapshot.");
         // O snapshot é opaco: todos os campos foram produzidos pela própria CPU.
         active_ = false;

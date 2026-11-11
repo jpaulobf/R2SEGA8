@@ -119,9 +119,9 @@ int R2SEGA8::Systems::Engine::run()
             resetFPS();
         };
         R2SEGA8::Window::Callbacks callbacks;
-        callbacks.openRom = [&](const std::filesystem::path &file, R2SEGA8::Common::SystemType type)
+        callbacks.openRom = [&](R2SEGA8::Core::Cartridge cartridge, R2SEGA8::Common::SystemType type)
         {
-            auto next = configuredBoard(type, R2SEGA8::Core::Cartridge(file), audioSettings, executionSettings);
+            auto next = configuredBoard(type, std::move(cartridge), audioSettings, executionSettings);
             publishBoard(std::move(next));
             reportLoadedBoard(*board);
         };
