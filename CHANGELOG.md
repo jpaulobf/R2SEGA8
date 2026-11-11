@@ -4,6 +4,9 @@ Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
 ## v0.4.0
 
+- Shaders experimentais no Windows: Gauss Scanlines, HQ2, CRT, CRT 3D e
+  ScaleFX, disponíveis em Display > Shaders para consoles de mesa e Game Gear.
+  Detalhes e limitações estão em docs/SHADERS.md.
 - Abertura de ROMs em arquivos ZIP pelo seletor ou arrastar e soltar. A primeira
   ROM SG/SC/SMS/GG do arquivo é carregada; são aceitas entradas sem compressão
   ou com DEFLATE. ZIP64, arquivos criptografados e multidisco não são suportados.
