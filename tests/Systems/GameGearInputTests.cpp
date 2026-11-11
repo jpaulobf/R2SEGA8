@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/GameGear/GameGear.h"
 #include <chrono>
 #include <filesystem>
@@ -42,7 +43,7 @@ int main()
     try
     {
         Fixture fixture;
-        auto board = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.path));
+        auto board = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         check(board->input(0) == 0xdf && board->input(0xdc) == 0xff && board->input(0xdd) == 0xff,
               "Released controls must expose an overseas NTSC Game Gear");
         board->setInput({mask(Button::Up) | mask(Button::A) | mask(Button::Start), mask(Button::Down) | mask(Button::Start)});

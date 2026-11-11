@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
 #include <algorithm>
 #include <chrono>
@@ -47,7 +48,7 @@ namespace
 
     void controls(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
         board->setInput({mask(Button::Up) | mask(Button::A), mask(Button::Down) | mask(Button::Right) | mask(Button::B)});
         for (unsigned port = 0xc0; port <= 0xff; ++port)
             check(board->input(static_cast<std::uint16_t>(0xa500 | port)) == (port & 1 ? 0xf5 : 0x6e), "SMS controller mirror");
@@ -81,7 +82,7 @@ namespace
 
     void horizontalLatch(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
         board->output(0x3f, 0x05); // TH A e B como saídas baixas.
         check((board->input(0xdd) & 0xc0) == 0, "TH output levels must be visible");
         board->runCycles(40);
@@ -114,7 +115,7 @@ namespace
 
     void lightPhaser(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
         board->setInput({mask(Button::Up) | mask(Button::B), 0});
         board->setLightPhaser(true, 80, 20, true);
         check((board->input(0xdc) & 0x3f) == 0x2f, "Phaser replaces port A with active-low trigger");
@@ -147,7 +148,7 @@ namespace
 
     void audio(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
         for (unsigned port = 0x40; port <= 0x7f; ++port)
         {
             board->output(static_cast<std::uint16_t>(0xa500 | port), static_cast<std::uint8_t>(0x80 | (port & 15)));
@@ -183,7 +184,7 @@ namespace
 
     void videoStartup(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
         auto reg = [&](unsigned index, unsigned value)
         {
             board->output(0xbf, static_cast<std::uint8_t>(value));
@@ -217,7 +218,7 @@ namespace
 
     void turbo(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
         board->setInput({mask(Button::TurboA), mask(Button::TurboB)});
         constexpr auto frameTicks = Core::SegaVDP::MasterTicksPerFrame;
         constexpr auto activeTicks = Core::SegaVDP::Height * Core::SegaVDP::DotsPerLine * 2;

@@ -30,10 +30,6 @@ namespace R2SEGA8::Core
     class Cartridge
     {
     public:
-        // Lê a ROM, normaliza seu caminho absoluto e procura sugestões por extensão
-        // e cabeçalho. Propaga as exceções de acesso ao arquivo e leitura.
-        // O perfil explícito permite configurar cartuchos sem depender de seu nome de arquivo.
-        explicit Cartridge(const std::filesystem::path &path, CartridgeProfile profile = CartridgeProfile::Automatic);
         // Usa uma imagem já lida e validada, evitando reler um ZIP entre a seleção e a carga.
         Cartridge(const std::filesystem::path &path, std::vector<std::uint8_t> rom, std::string romName,
                   CartridgeProfile profile = CartridgeProfile::Automatic);

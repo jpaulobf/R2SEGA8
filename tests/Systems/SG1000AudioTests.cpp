@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/SG1000/SG1000.h"
 #include "Common/Hash.h"
 #include <algorithm>
@@ -46,9 +47,10 @@ int main()
     {
         using namespace R2SEGA8;
         Fixture fixture;
-        Core::SG1000 board{Core::Cartridge(fixture.path)};
+        Core::SG1000 board{::R2SEGA8::Tests::loadCartridge(fixture.path)};
         check(std::all_of(board.psg().state().attenuation.begin(), board.psg().state().attenuation.end(),
-                          [](auto value) { return value == 15; }),
+                          [](auto value)
+                          { return value == 15; }),
               "SG-1000 PSG must start with muted channels");
         Core::Board &boardInterface = board;
         check(board.vdp().state().spriteUnlimited, "Unlimited sprites must be enabled by default");
@@ -95,10 +97,10 @@ int main()
         board.cpu().reset();
         check(board.psg().state().clocks == clocks && board.psg().state().tone == programmed,
               "CPU-only reset must not reset the sound chip");
-        Core::SG1000 fresh{Core::Cartridge(fixture.path)};
+        Core::SG1000 fresh{::R2SEGA8::Tests::loadCartridge(fixture.path)};
         check(fresh.psg().state().clocks == 0 && fresh.psg().state().tone[0] == 0, "ROM replacement must create a fresh PSG");
         // Captura durante uma instrução e verifica a mesma continuação da máquina completa.
-        auto original = std::make_unique<Core::SG1000>(Core::Cartridge(fixture.path));
+        auto original = std::make_unique<Core::SG1000>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         original->runCycles(101);
         original->writeMemory(0xc123, 0x5a);
         const auto saved = original->saveState();
@@ -107,7 +109,7 @@ int main()
             baseline = (baseline ^ byte) * 1099511628211ull;
         check(saved.size() == 416926 && baseline == 518481195342551973ull,
               "Save state format must remain compatible with version 1");
-        auto restored = std::make_unique<Core::SG1000>(Core::Cartridge(fixture.path));
+        auto restored = std::make_unique<Core::SG1000>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         restored->loadState(saved);
         check(restored->saveState() == saved, "State must round-trip without losing CPU, VDP, PSG or RAM");
         original->runCycles(15000);

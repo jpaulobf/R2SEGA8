@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/SG1000/SG1000.h"
 #include "Core/Systems/GameGear/GameGear.h"
 #include "Systems/Input.h"
@@ -70,9 +71,9 @@ namespace
         }
         std::unique_ptr<Core::Board> board;
         if (gameGear)
-            board = std::make_unique<Core::GameGear>(Core::Cartridge(path));
+            board = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(path));
         else
-            board = std::make_unique<Core::SG1000>(Core::Cartridge(path));
+            board = std::make_unique<Core::SG1000>(::R2SEGA8::Tests::loadCartridge(path));
         Systems::RewindBuffer history;
         history.configure(board->clockFrequency(), board->cyclesPerFrame(), Common::RewindLevel::Precise);
         for (unsigned frame = 0; frame < 4; ++frame)

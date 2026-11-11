@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Common/Hash.h"
 #include "Core/Systems/GameGear/GameGear.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
@@ -68,8 +69,8 @@ int main()
     try
     {
         Fixture fixture;
-        auto original = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.path));
-        auto restored = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.path));
+        auto original = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.path));
+        auto restored = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         check(original->supportsSaveState(), "Game Gear must support save states");
         original->writeMemory(0xfffd, 3);
         original->writeMemory(0xfffc, 0x0c);
@@ -129,10 +130,10 @@ int main()
         rejects([&]
                 { restored->loadState(bad); }, "Forged CPU mode must be rejected");
         check(restored->saveState() == beforeInvalid, "Rejected CPU state must preserve the machine");
-        auto sms = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path));
+        auto sms = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         rejects([&]
                 { restored->loadState(sms->saveState()); }, "Other systems' states must be rejected");
-        auto empty = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.path));
+        auto empty = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         restored->loadState(empty->saveState());
         restored->writeMemory(0xfffc, 8);
         restored->writeMemory(0x8000, 0x42);
@@ -143,7 +144,7 @@ int main()
             changed.close();
             check(bool(changed), "Unable to modify ROM fixture");
         }
-        auto otherRom = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.path));
+        auto otherRom = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         rejects([&]
                 { otherRom->loadState(saved); }, "A different ROM must not accept the state");
         std::cout << "Game Gear save states passed\n";

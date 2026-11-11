@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Common/RomFile.h"
 #include "Core/Cartridge/Cartridge.h"
 
@@ -135,7 +136,7 @@ int main(int argc, char **argv)
                 Bytes out{42};
                 check(extractRomFromZip(zip, out, name) && out == raw, "valid ZIP rejected");
                 save(dir / "valid.zip", zip);
-                Cartridge c(dir / "valid.zip");
+                auto c = ::R2SEGA8::Tests::loadCartridge(dir / "valid.zip");
                 check(c.suggestedSystem() == R2SEGA8::Common::SystemType::SG1000, "ZIP system detection");
             }
         save(dir / "valid.zip", archive(raw, true, false, "game.sg"));
@@ -222,7 +223,7 @@ int main(int argc, char **argv)
                                   std::make_pair("game.gg", SystemType::GameGear)})
         {
             save(dir / "valid.zip", archive(raw, true, false, entry.first));
-            check(Cartridge(dir / "valid.zip").suggestedSystem() == entry.second, "ZIP system detection");
+            check(::R2SEGA8::Tests::loadCartridge(dir / "valid.zip").suggestedSystem() == entry.second, "ZIP system detection");
         }
         std::cout << "ROM and ZIP bounds tests passed\n";
     }

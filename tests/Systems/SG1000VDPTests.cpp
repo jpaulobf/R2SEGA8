@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/SG1000/SG1000.h"
 #include <algorithm>
 #include <array>
@@ -117,18 +118,22 @@ namespace
     {
         std::vector<Byte> rom(0x8000, 0);
         std::size_t pc = 0;
-        const auto emit = [&](std::initializer_list<Byte> bytes) {
+        const auto emit = [&](std::initializer_list<Byte> bytes)
+        {
             for (const auto value : bytes)
                 rom[pc++] = value;
         };
-        const auto regWrite = [&](Byte index, Byte value) {
+        const auto regWrite = [&](Byte index, Byte value)
+        {
             emit({0x3e, value, 0xd3, 0xbf, 0x3e, static_cast<Byte>(0x80 | index), 0xd3, 0xbf});
         };
-        const auto address = [&](unsigned value) {
+        const auto address = [&](unsigned value)
+        {
             emit({0x3e, static_cast<Byte>(value), 0xd3, 0xbf,
                   0x3e, static_cast<Byte>(0x40 | (value >> 8)), 0xd3, 0xbf});
         };
-        const auto write = [&](Byte value) { emit({0x3e, value, 0xd3, 0xbe}); };
+        const auto write = [&](Byte value)
+        { emit({0x3e, value, 0xd3, 0xbe}); };
         emit({0xf3, 0x31, 0x00, 0xc4}); // DI; LD SP,C400.
         regWrite(1, 0x80);              // Tela apagada durante a preparação.
         regWrite(2, 6);
@@ -153,7 +158,7 @@ namespace
         regWrite(1, 0xc0);
         emit({0xdb, 0xbf, 0xe6, 0x20, 0x28, 0xfa}); // IN BF; AND 20; JR Z,-6.
         regWrite(7, 2);                             // Verde somente depois de ler C=1.
-        emit({0x76, 0x18, 0xfd});                  // HALT permanente, com INT desabilitada.
+        emit({0x76, 0x18, 0xfd});                   // HALT permanente, com INT desabilitada.
         check(pc < rom.size(), "Offscreen diagnostic exceeds ROM capacity");
         return rom;
     }
@@ -162,7 +167,7 @@ namespace
     void offscreenProbeStandalone(const std::vector<Byte> &rom)
     {
         Fixture fixture(rom);
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         board->runCycles(VDP::MasterTicksPerFrame / 3ULL * 2);
         check(board->cpu().state().halted && board->vdp().state().registers[7] == 2,
               "Standalone diagnostic must detect offscreen C through the Z80 and turn green");
@@ -170,7 +175,7 @@ namespace
         check(frame.rgba[0] == 33 && frame.rgba[1] == 200 && frame.rgba[2] == 66,
               "Standalone diagnostic must display the green success backdrop");
         Fixture control(offscreenProbeROM(false));
-        auto noCollision = std::make_unique<Board>(R2SEGA8::Core::Cartridge(control.path));
+        auto noCollision = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(control.path));
         noCollision->runCycles(VDP::MasterTicksPerFrame / 3ULL * 2);
         check(!noCollision->cpu().state().halted && noCollision->vdp().state().registers[7] == 6,
               "Nonoverlapping offscreen sprites must keep the diagnostic waiting with a red backdrop");
@@ -180,20 +185,21 @@ namespace
     void offscreenCollisionThroughCPU()
     {
         std::vector<Byte> rom(0x100, 0);
-        rom[0] = 0x76; // HALT até o teste disparar NMI depois de preparar a VRAM.
+        rom[0] = 0x76;                                                       // HALT até o teste disparar NMI depois de preparar a VRAM.
         const Byte code[] = {0x3e, 0xc0, 0xd3, 0xbf, 0x3e, 0x81, 0xd3, 0xbf, // Ativa Graphics I.
                              0xdb, 0xbf, 0xe6, 0x20, 0x28, 0xfa,             // Consulta BF até C=1.
-                             0x32, 0x00, 0xc0, 0x76};                       // Registra C e espera.
+                             0x32, 0x00, 0xc0, 0x76};                        // Registra C e espera.
         std::copy(std::begin(code), std::end(code), rom.begin() + 0x66);
         Fixture fixture(rom);
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         board->runCycles(20);
         check(board->cpu().state().halted, "Offscreen collision test CPU must await NMI");
         reg(*board, 5, 0x7f);
         reg(*board, 6, 5);
         reg(*board, 7, 4);
         // As transferências seguem pela porta real e esperam com a tela apagada.
-        const auto upload = [&](unsigned address, std::initializer_list<Byte> bytes) {
+        const auto upload = [&](unsigned address, std::initializer_list<Byte> bytes)
+        {
             board->output(0xbf, static_cast<Byte>(address));
             board->output(0xbf, static_cast<Byte>(0x40 | (address >> 8)));
             for (const auto value : bytes)
@@ -217,7 +223,7 @@ namespace
     // Confere todos os espelhos de porta e a relação exata entre o clock da CPU e o raster.
     void mappingAndClock(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         auto halted = board->cpu().state();
         halted.halted = true;
         board->cpu().setState(halted);
@@ -238,7 +244,7 @@ namespace
         board->output(0xc1, 0x55);
         check(board->input(0xdc) == 0xff && board->input(0x7e) == 0xff && board->vdp().state().address == address,
               "Unimplemented devices do not alias VDP ports");
-        board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         auto s = board->cpu().state();
         s.halted = true;
         board->cpu().setState(s);
@@ -310,7 +316,7 @@ namespace
             for (unsigned i = 0; i < 64; ++i)
                 rom[0x100 + i] = static_cast<Byte>(i + 1);
             Fixture fixture(rom);
-            auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+            auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(fixture.path));
             for (unsigned elapsed = 0; elapsed < 20000 && board->readMemory(0xc001) != 1; elapsed += 128)
                 board->runCycles(128);
             check(board->readMemory(0xc001) == 1, "CPU transfer pacing ROM did not complete");
@@ -340,7 +346,7 @@ namespace
                              0x10, 0xfe, 0x3e, 6, 0xd3, 0xbf, 0x3e, 0x87, 0xd3, 0xbf, 0x76, 0x18, 0xfd};
         std::copy(std::begin(code), std::end(code), rom.begin());
         Fixture fixture(rom);
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         std::array<unsigned, 2> changes{};
         unsigned count = 0;
         for (unsigned ticks = 0; ticks < 50000 && board->videoFrame().number == 0; ++ticks)
@@ -544,7 +550,7 @@ int main(int argc, char **argv)
         offscreenProbeStandalone(probe);
         transferPacing();
         rasterColors();
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(fixture.path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         validateDemo(*board);
         if (argc == 2)
         {
@@ -558,7 +564,7 @@ int main(int argc, char **argv)
         {
             const auto modeROM = backgroundROM(mode);
             Fixture modeFixture(modeROM);
-            auto modeBoard = std::make_unique<Board>(R2SEGA8::Core::Cartridge(modeFixture.path));
+            auto modeBoard = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(modeFixture.path));
             validateBackground(*modeBoard, mode);
             if (argc == 2)
                 exportDemo(std::filesystem::u8path(argv[1]), modeROM, *modeBoard,

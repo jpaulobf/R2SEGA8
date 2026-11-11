@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "Common/Hash.h"
 #include <chrono>
@@ -48,8 +49,8 @@ int main()
         Fixture fixture;
         for (bool pal : {false, true})
         {
-            auto original = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path), pal);
-            auto restored = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path), pal);
+            auto original = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(fixture.path), pal);
+            auto restored = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(fixture.path), pal);
             check(original->supportsSaveState(), "Master System must support save states");
             original->writeMemory(0xfffd, 3);
             original->writeMemory(0xfffc, 0x0c);
@@ -150,10 +151,10 @@ int main()
             bad = saved;
             bad[26] ^= 0x80; // Registrador A: alteração válida, mas não autêntica.
             rewriteChecksum(bad);
-            auto altered = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path), pal);
+            auto altered = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(fixture.path), pal);
             altered->loadState(bad);
             altered->runCycles(2000);
-            auto wrongProfile = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path), !pal);
+            auto wrongProfile = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(fixture.path), !pal);
             rejected = false;
             try
             {
@@ -164,7 +165,7 @@ int main()
                 rejected = true;
             }
             check(rejected, "Different console profile must be rejected");
-            auto empty = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path), pal);
+            auto empty = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(fixture.path), pal);
             restored->loadState(empty->saveState());
             restored->writeMemory(0xfffc, 8);
             restored->writeMemory(0x8000, 0x42);

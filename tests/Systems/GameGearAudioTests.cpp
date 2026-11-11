@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/GameGear/GameGear.h"
 #include <algorithm>
 #include <chrono>
@@ -35,7 +36,7 @@ namespace
     };
     void routing(const std::filesystem::path &path, unsigned channel, unsigned side)
     {
-        auto board = std::make_unique<Core::GameGear>(Core::Cartridge(path));
+        auto board = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(path));
         board->output(0x7f, static_cast<std::uint8_t>(0x90 | (channel << 5)));
         board->output(0x106, static_cast<std::uint8_t>((side == 0 ? 0x10 : 1) << channel));
         board->runCycles(100000);
@@ -65,7 +66,7 @@ int main()
         for (unsigned channel = 0; channel < 4; ++channel)
             for (unsigned side = 0; side < 2; ++side)
                 routing(fixture.path, channel, side);
-        auto board = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.path));
+        auto board = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.path));
         board->output(0x40, 0x90);
         board->runCycles(10000);
         std::vector<float> samples;

@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/Systems/SG1000/SG1000.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "Core/Systems/GameGear/GameGear.h"
@@ -46,8 +47,8 @@ int main()
     {
         using namespace R2SEGA8;
         Fixture fixture;
-        Core::SG1000 board{Core::Cartridge(fixture.rom("one.sg", '\x01'))};
-        Core::SG1000 other{Core::Cartridge(fixture.rom("two.sg", '\x02'))};
+        Core::SG1000 board{::R2SEGA8::Tests::loadCartridge(fixture.rom("one.sg", '\x01'))};
+        Core::SG1000 other{::R2SEGA8::Tests::loadCartridge(fixture.rom("two.sg", '\x02'))};
         Systems::SaveStateStore store(fixture.directory / "saves");
         board.writeMemory(0xc000, 0x42);
         const auto first = board.saveState();
@@ -106,7 +107,7 @@ int main()
             rejected = true;
         }
         check(rejected, "Invalid slots must be rejected");
-        Core::MasterSystem sms{Core::Cartridge(fixture.rom("game.sms", '\x76'))};
+        Core::MasterSystem sms{::R2SEGA8::Tests::loadCartridge(fixture.rom("game.sms", '\x76'))};
         for (unsigned slot = 1; slot <= 3; ++slot)
         {
             sms.writeMemory(0xc000, static_cast<std::uint8_t>(slot));
@@ -117,7 +118,7 @@ int main()
             sms.loadState(store.load(sms, slot));
             check(sms.readMemory(0xc000) == slot, "Master System slots must preserve independent states");
         }
-        auto gg = std::make_unique<Core::GameGear>(Core::Cartridge(fixture.rom("game.gg", '\x76')));
+        auto gg = std::make_unique<Core::GameGear>(::R2SEGA8::Tests::loadCartridge(fixture.rom("game.gg", '\x76')));
         for (unsigned slot = 1; slot <= 3; ++slot)
         {
             gg->writeMemory(0xc000, static_cast<std::uint8_t>(slot + 10));

@@ -1,3 +1,4 @@
+#include "../Support/CartridgeFixture.h"
 #include "Core/IO/Joypad.h"
 #include "Core/Systems/SG1000/SG1000.h"
 #include <algorithm>
@@ -52,7 +53,7 @@ namespace
     // Confere todas as 4096 combinações de linhas, inclusive P2 dividido entre os dois registradores.
     void lines(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         for (unsigned first = 0; first < 64; ++first)
             for (unsigned second = 0; second < 64; ++second)
             {
@@ -105,7 +106,7 @@ namespace
     // Exercita IN e a NMI de Pause/Hold com CPU real, sem interromper o relógio do VDP.
     void cpu(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         board->setInput({mask(Button::Up) | mask(Button::A), mask(Button::Right) | mask(Button::B)});
         board->runCycles(256);
         check(board->readMemory(0xc000) == 0xee && board->readMemory(0xc001) == 0xf5 && board->readMemory(0xc002) == 1,
@@ -132,7 +133,7 @@ namespace
     // O turbo muda na fronteira do quadro emulado mesmo que o host não publique outra entrada.
     void turbo(const std::filesystem::path &path)
     {
-        auto board = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto board = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         board->setInput({mask(Button::TurboA), mask(Button::TurboB)});
         const auto thirdFrame = (2ULL * VDP::MasterTicksPerFrame + VDP::Height * VDP::MasterTicksPerLine) / 3;
         board->runCycles(thirdFrame - 1);
@@ -149,13 +150,13 @@ namespace
 
     void restoreControls(const std::filesystem::path &path)
     {
-        auto original = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto original = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         const auto thirdFrame = (2ULL * VDP::MasterTicksPerFrame + VDP::Height * VDP::MasterTicksPerLine) / 3;
         original->setInput({mask(Button::TurboA) | mask(Button::Start), mask(Button::TurboB)});
         original->runCycles(thirdFrame);
         check(!(original->input(0xdc) & 0x10) && !(original->input(0xdd) & 8), "Turbo must be active at save time");
         const auto saved = original->saveState();
-        auto restored = std::make_unique<Board>(R2SEGA8::Core::Cartridge(path));
+        auto restored = std::make_unique<Board>(::R2SEGA8::Tests::loadCartridge(path));
         restored->loadState(saved);
         check(restored->saveState() == saved && restored->input(0xdc) == original->input(0xdc) &&
                   restored->input(0xdd) == original->input(0xdd) && restored->cpu().state().nmiLine,

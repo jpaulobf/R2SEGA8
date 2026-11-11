@@ -23,14 +23,6 @@ namespace R2SEGA8::Core
         }
     } // namespace
 
-    Cartridge::Cartridge(const std::filesystem::path &path, CartridgeProfile profile)
-        : path_(std::filesystem::absolute(path).lexically_normal()), rom_()
-    {
-        std::string romName;
-        rom_ = Common::readRomFile(path_, &romName);
-        initialize(romName, profile);
-    }
-
     Cartridge::Cartridge(const std::filesystem::path &path, std::vector<std::uint8_t> rom, std::string romName,
                          CartridgeProfile profile)
         : path_(std::filesystem::absolute(path).lexically_normal()), rom_(std::move(rom))
