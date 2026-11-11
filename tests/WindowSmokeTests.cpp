@@ -251,7 +251,7 @@ namespace
         checkScale(native, 3);
         for (const bool stretched : {true, false})
         {
-            menuOption(window, "Display", stretched ? "Borderless Fullscreen Stretched" : "Borderless Fullscreen");
+            menuOption(window, "Display", stretched ? "Fullscreen Stretched" : "Fullscreen");
             window.processEvents();
             window.render();
             window.render();
@@ -804,7 +804,7 @@ int main()
                 const auto *menu = ImGui::FindWindowByName("###Menu_00");
                 if (!menu || !menu->Active)
                     throw std::runtime_error("Display menu did not open");
-                ImGui::ActivateItemByID(ImHashStr("Console Profile", 0, menu->ID));
+                ImGui::ActivateItemByID(ImHashStr("Console Region", 0, menu->ID));
                 window.render();
                 const auto *submenu = ImGui::FindWindowByName("###Menu_01");
                 if (submenu && submenu->Active)
@@ -813,13 +813,13 @@ int main()
                 window.render();
             }
             loadedType = R2SEGA8::Common::SystemType::MasterSystem;
-            submenuOption(window, "Display", "Console Profile", "PAL");
+            submenuOption(window, "Display", "Console Region", "PAL");
             if (executionSettings.consoleProfile != R2SEGA8::Common::ConsoleProfile::PAL)
                 throw std::runtime_error("Console profile menu must select PAL");
-            submenuOption(window, "Display", "Console Profile", "NTSC");
+            submenuOption(window, "Display", "Console Region", "NTSC");
             if (executionSettings.consoleProfile != R2SEGA8::Common::ConsoleProfile::NTSC)
                 throw std::runtime_error("Console profile menu must select NTSC");
-            submenuOption(window, "Display", "Console Profile", "Auto");
+            submenuOption(window, "Display", "Console Region", "Auto");
             if (executionSettings.consoleProfile != R2SEGA8::Common::ConsoleProfile::Auto)
                 throw std::runtime_error("Console profile menu must select Auto");
             loadedType = R2SEGA8::Common::SystemType::SG1000;
@@ -849,7 +849,7 @@ int main()
             SDL_GetWindowSizeInPixels(nativeWindow, &croppedWidth, &croppedHeight);
             if (!executionSettings.cropLeftEnabled || croppedWidth != 248 * 3 || !hasVideoTexture(8, 4))
                 throw std::runtime_error("Crop must update the texture and window width");
-            menuOption(window, "Display", "Borderless Fullscreen");
+            menuOption(window, "Display", "Fullscreen");
             window.render();
             window.render();
             const auto croppedBounds = videoBounds(8, 4);

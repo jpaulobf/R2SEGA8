@@ -251,6 +251,8 @@ int R2SEGA8::Systems::Engine::run()
         };
         callbacks.menuPause = [&](bool paused)
         { pause.setMenuPaused(paused); };
+        callbacks.displayTransitionCompleted = [&]()
+        { resetAudio = resetTiming = true; };
         callbacks.setAudioSettings = [&](const R2SEGA8::Common::AudioSettings &settings)
         {
             audioSettings = settings;
@@ -329,7 +331,7 @@ int R2SEGA8::Systems::Engine::run()
         // Apenas mudanças da pausa efetiva descartam áudio e prazos; fechar menu não desfaz Pause/Break.
         const auto synchronizePause = [&]()
         {
-            const bool next = pause.paused() || debugPaused;
+            const bool next = pause.paused() || debugPaused || window.isMinimized();
             if (next == emulationPaused)
                 return;
             const auto now = Clock::now();

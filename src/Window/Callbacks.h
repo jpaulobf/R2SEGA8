@@ -71,6 +71,9 @@ namespace R2SEGA8::Window
         // Informa pausa temporária por menus/diálogos; não altera a pausa manual da aplicação.
         std::function<void(bool)> menuPause;
 
+        // Descarta prazos e áudio acumulados durante uma troca de modo de vídeo.
+        std::function<void()> displayTransitionCompleted;
+
         // Solicita a liberação da máquina ativa, mantendo a janela aberta.
         std::function<void()> unload;
 

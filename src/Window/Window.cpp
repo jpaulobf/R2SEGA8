@@ -4,6 +4,7 @@
 #include "NtscShaderPipeline.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #ifdef _WIN32
@@ -61,6 +62,30 @@ namespace R2SEGA8::Window
             Aspect
         };
         Fullscreen fullscreen = Fullscreen::None, pendingFullscreen = Fullscreen::None;
+        struct Resolution
+        {
+            int width, height;
+            const char *label;
+        };
+        inline static constexpr std::array<Resolution, 12> resolutions{{{640, 480, "640 x 480"}, {800, 600, "800 x 600"}, {832, 624, "832 x 624"}, {1024, 768, "1024 x 768"}, {1128, 634, "1128 x 634"}, {1280, 720, "1280 x 720"}, {1280, 960, "1280 x 960"}, {1366, 768, "1366 x 768"}, {1440, 900, "1440 x 900"}, {1600, 900, "1600 x 900"}, {1680, 1050, "1680 x 1050"}, {1920, 1080, "1920 x 1080"}}};
+        int resolution = -1;
+        std::array<bool, 12> unavailableResolutions{};
+
+        bool resolutionMode(int index, SDL_DisplayMode &result)
+        {
+            int count = 0;
+            auto modes = SDL_GetFullscreenDisplayModes(SDL_GetDisplayForWindow(window), &count);
+            bool found = false;
+            for (int i = 0; i < count; ++i)
+                if (modes[i]->w == resolutions[index].width && modes[i]->h == resolutions[index].height)
+                {
+                    result = *modes[i];
+                    found = true;
+                    break;
+                }
+            SDL_free(modes);
+            return found;
+        }
         unsigned stateSlot = 1;
         SDL_DisplayID centerDisplay = 0;
         int fixedWidth = 0, fixedHeight = 0;
@@ -132,15 +157,35 @@ namespace R2SEGA8::Window
         }
         void setFullscreen(Fullscreen mode)
         {
-            if (mode != Fullscreen::None && !SDL_SetWindowFullscreenMode(window, nullptr))
-                throw std::runtime_error(SDL_GetError());
+            if (mode != Fullscreen::None)
+            {
+                SDL_DisplayMode selected{};
+                if (resolution >= 0 && (!resolutionMode(resolution, selected) || !SDL_SetWindowFullscreenMode(window, &selected)))
+                {
+                    unavailableResolutions[resolution] = true;
+                    resolution = -1;
+                }
+                if (resolution < 0 && !SDL_SetWindowFullscreenMode(window, nullptr))
+                    throw std::runtime_error(SDL_GetError());
+            }
             if (!SDL_SetWindowFullscreen(window, mode != Fullscreen::None))
-                throw std::runtime_error(SDL_GetError());
+            {
+                if (mode == Fullscreen::None || resolution < 0)
+                    throw std::runtime_error(SDL_GetError());
+                unavailableResolutions[resolution] = true;
+                resolution = -1;
+                if (!SDL_SetWindowFullscreenMode(window, nullptr) || !SDL_SetWindowFullscreen(window, true))
+                    throw std::runtime_error(SDL_GetError());
+            }
             fullscreen = mode;
+            // A troca pode ser assíncrona. A emulação compartilha esta thread e só
+            // retoma depois de o gerenciador de janelas concluir a transição.
+            if (!SDL_SyncWindow(window))
+                throw std::runtime_error(SDL_GetError());
+            if (callbacks.displayTransitionCompleted)
+                callbacks.displayTransitionCompleted();
             if (mode == Fullscreen::None)
             {
-                if (!SDL_SyncWindow(window))
-                    throw std::runtime_error(SDL_GetError());
                 resizeDisplay(displayScale);
             }
         }
@@ -735,6 +780,25 @@ namespace R2SEGA8::Window
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
+                    if (ImGui::BeginMenu("FullScreen Resolution"))
+                    {
+                        if (ImGui::MenuItem("Desktop Resolution", nullptr, state.resolution < 0))
+                            state.resolution = -1;
+                        for (int i = 0; i < static_cast<int>(state.resolutions.size()); ++i)
+                            if (ImGui::MenuItem(state.resolutions[i].label, nullptr, state.resolution == i, !state.unavailableResolutions[i]))
+                            {
+                                SDL_DisplayMode selected{};
+                                if (state.resolutionMode(i, selected))
+                                    state.resolution = i;
+                                else
+                                {
+                                    state.unavailableResolutions[i] = true;
+                                    state.resolution = -1;
+                                }
+                            }
+                        ImGui::EndMenu();
+                    }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
                         state.callbacks.setExecutionSettings(settings);
                     ImGui::Separator();
@@ -747,9 +811,9 @@ namespace R2SEGA8::Window
                             state.pendingDisplayScale = scale;
                     }
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Borderless Fullscreen Stretched"))
+                    if (ImGui::MenuItem("Fullscreen Stretched"))
                         state.pendingFullscreen = Impl::Fullscreen::Stretched;
-                    if (ImGui::MenuItem("Borderless Fullscreen", "Ctrl+F"))
+                    if (ImGui::MenuItem("Fullscreen", "Ctrl+F"))
                         state.pendingFullscreen = Impl::Fullscreen::Aspect;
                     ImGui::Separator();
                     if (ImGui::MenuItem("Bilinear Filter", nullptr, &settings.bilinearFilterEnabled, configurable))
