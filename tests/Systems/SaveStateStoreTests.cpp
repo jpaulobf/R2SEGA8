@@ -1,6 +1,7 @@
 #include "Core/Systems/SG1000/SG1000.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "Core/Systems/GameGear/GameGear.h"
+#include "Common/Hash.h"
 #include "Systems/SaveStateStore.h"
 #include <chrono>
 #include <filesystem>
@@ -53,6 +54,32 @@ int main()
         store.save(board, 1);
         check(std::filesystem::exists(fixture.directory / "saves" / "1-af63bc4c8601b62c.slot1.state"),
               "Existing save state file names must remain compatible");
+        const auto occupiedTemporary = fixture.directory / "saves" / "1-af63bc4c8601b62c.slot1.state.tmp";
+        {
+            std::ofstream occupied(occupiedTemporary, std::ios::binary);
+            occupied << "keep";
+        }
+        store.save(board, 1);
+        std::ifstream occupied(occupiedTemporary, std::ios::binary);
+        std::string marker;
+        occupied >> marker;
+        check(marker == "keep", "Saving must not overwrite a preexisting temporary file");
+        auto forged = first;
+        forged[56] = 3; // SG-1000: modo de interrupção da CPU fora de 0..2.
+        const auto payload = forged.size() - 8;
+        const auto checksum = Common::fnv1a64(forged.data(), payload);
+        for (unsigned i = 0; i < 8; ++i)
+            forged[payload + i] = static_cast<std::uint8_t>(checksum >> (8 * i));
+        bool rejectedForged = false;
+        try
+        {
+            board.loadState(forged);
+        }
+        catch (const std::exception &)
+        {
+            rejectedForged = true;
+        }
+        check(rejectedForged && board.saveState() == first, "Forged SG-1000 CPU state must be rejected atomically");
         board.writeMemory(0xc000, 0x77);
         const auto second = board.saveState();
         store.save(board, 2);

@@ -631,12 +631,14 @@ int main()
             };
             callbacks.lightPhaser = [&](int x, int y, bool trigger)
             { phaserX = x; phaserY = y; phaserTrigger = trigger; };
-            callbacks.openRom = [&](const std::filesystem::path &path, auto type)
+            callbacks.openRom = [&](R2SEGA8::Core::Cartridge cartridge, auto type)
             {
                 ++attempts;
                 if (rejectLoad)
                     throw std::runtime_error("Load rejected by application callback");
-                loadedPath = path;
+                loadedPath = cartridge.path();
+                if (cartridge.rom().empty())
+                    throw std::runtime_error("ROM callback received an empty image");
                 emulatedFPS = 59.92;
                 loadedType = type;
                 rom.assign(8, 0x42);

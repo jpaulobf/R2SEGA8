@@ -17,6 +17,13 @@ namespace
         if (!value)
             throw std::runtime_error(message);
     }
+    void rewriteChecksum(std::vector<std::uint8_t> &state)
+    {
+        const auto payload = state.size() - 8;
+        const auto checksum = R2SEGA8::Common::fnv1a64(state.data(), payload);
+        for (unsigned i = 0; i < 8; ++i)
+            state[payload + i] = static_cast<std::uint8_t>(checksum >> (8 * i));
+    }
     struct Fixture
     {
         std::filesystem::path path = std::filesystem::temp_directory_path() /
@@ -109,6 +116,19 @@ int main()
             bad.push_back(static_cast<std::uint8_t>(checksum >> (i * 8)));
         rejects([&]
                 { restored->loadState(bad); }, "Truncated payload with a valid checksum must be rejected");
+        bad = saved;
+        bad[24] = 2; // hasCartRam: booleano do cabeçalho.
+        rewriteChecksum(bad);
+        const auto beforeInvalid = restored->saveState();
+        rejects([&]
+                { restored->loadState(bad); }, "Forged state boolean must be rejected");
+        check(restored->saveState() == beforeInvalid, "Rejected forged state must preserve the machine");
+        bad = saved;
+        bad[53] = 3; // Z80 IM: apenas 0, 1 ou 2.
+        rewriteChecksum(bad);
+        rejects([&]
+                { restored->loadState(bad); }, "Forged CPU mode must be rejected");
+        check(restored->saveState() == beforeInvalid, "Rejected CPU state must preserve the machine");
         auto sms = std::make_unique<Core::MasterSystem>(Core::Cartridge(fixture.path));
         rejects([&]
                 { restored->loadState(sms->saveState()); }, "Other systems' states must be rejected");
