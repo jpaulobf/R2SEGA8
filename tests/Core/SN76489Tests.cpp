@@ -58,14 +58,22 @@ int main()
             }
         }
         PSG sega(PSG::DefaultClock, PSG::DefaultSampleRate, PSG::Variant::Sega);
-        check(std::all_of(sega.state().attenuation.begin(), sega.state().attenuation.end(), [](auto v) { return v == 15; }),
+        check(std::all_of(sega.state().attenuation.begin(), sega.state().attenuation.end(), [](auto v)
+                          { return v == 15; }),
               "Sega PSG must start with all channels muted");
         sega.runClocks(PSG::DefaultClock / 20);
         std::vector<float> startup;
         sega.takeSamples(startup);
-        check(!startup.empty() && std::all_of(startup.begin(), startup.end(), [](float v) { return v == 0.0f; }),
+        check(!startup.empty() && std::all_of(startup.begin(), startup.end(), [](float v)
+                                              { return v == 0.0f; }),
               "Sega PSG must not generate startup noise before the game programs it");
+        check(sega.state().latch == 3, "Sega reset selects tone 2 attenuation");
+        sega.write(0x00);
+        check(sega.state().attenuation[1] == 0 && sega.state().tone[0] == 0 && sega.state().latch == 3,
+              "A data byte before the first latch must update tone 2 attenuation");
         sega.reset();
+        check(sega.state().latch == 3 && sega.state().attenuation[1] == 15,
+              "Sega reset must restore its selected register and silence");
         mute(sega);
         sega.write(0x90);
         for (unsigned period : {0u, 1u})
