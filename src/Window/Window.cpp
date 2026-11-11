@@ -1,6 +1,7 @@
 #include "Window.h"
 #include "FileManager.h"
 #include "DebugWindow.h"
+#include "NtscShaderPipeline.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -34,6 +35,21 @@ namespace R2SEGA8::Window
         SDL_Window *window = nullptr;
         SDL_Renderer *renderer = nullptr;
         SDL_Texture *videoTexture = nullptr;
+        SDL_Texture *shaderTexture = nullptr;
+        enum class Shader
+        {
+            None,
+            Gauss,
+            HQ2,
+            CRT,
+            CRT3D,
+            ScaleFX
+        };
+        Shader shader = Shader::None, initializedShader = Shader::None;
+        unsigned shaderSourceWidth = 0;
+        int shaderWidth = 0, shaderHeight = 0;
+        std::unique_ptr<NtscShaderPipeline> shaderPipeline;
+        std::vector<std::uint32_t> shaderInput, shaderOutput;
         unsigned videoWidth = 0, videoHeight = 0;
         std::vector<std::uint8_t> scanlinePixels;
         DisplaySize nativeSize;
@@ -305,6 +321,79 @@ namespace R2SEGA8::Window
             const ImVec2 size = fullscreen == Fullscreen::Stretched ? available : ImVec2(visibleWidth * scale, nativeSize.height * scale);
             if (scale > 0)
             {
+                SDL_Texture *displayTexture = videoTexture;
+                bool useShader = shader != Shader::None;
+                std::string shaderError;
+                if (useShader && (initializedShader != shader || (shader == Shader::Gauss && shaderSourceWidth != frame.width)))
+                {
+                    const char *preset = shader == Shader::Gauss ? (frame.width <= 160 ? "ntsc/ntsc-160px-gauss-scanline.cgp" : "ntsc/ntsc-256px-gauss-scanline.cgp") : shader == Shader::HQ2 ? "hqx/hq2x-visual.cgp"
+                                                                                                                                                                    : shader == Shader::CRT   ? "crt/crt-hyllian-3d-nes.cgp"
+                                                                                                                                                                    : shader == Shader::CRT3D ? "crt/crt-lottes.cgp"
+                                                                                                                                                                                              : "scalefx/scalefx-visual.cgp";
+                    auto path = std::filesystem::path(SDL_GetBasePath()) / "shaders" / preset;
+                    if (!std::filesystem::exists(path))
+                        path = std::filesystem::path("shaders") / preset;
+                    auto candidate = std::make_unique<NtscShaderPipeline>();
+                    if (candidate->initialize(path, shaderError))
+                    {
+                        shaderPipeline = std::move(candidate);
+                        initializedShader = shader;
+                        shaderSourceWidth = frame.width;
+                    }
+                    else
+                        useShader = false;
+                }
+                if (useShader)
+                {
+                    const auto &io = ImGui::GetIO();
+                    const int outputWidth = std::max(1, static_cast<int>(std::lround(size.x * io.DisplayFramebufferScale.x)));
+                    const int outputHeight = std::max(1, static_cast<int>(std::lround(size.y * io.DisplayFramebufferScale.y)));
+                    if (!shaderTexture || shaderWidth != outputWidth || shaderHeight != outputHeight)
+                    {
+                        if (shaderTexture)
+                            SDL_DestroyTexture(shaderTexture);
+                        shaderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outputWidth, outputHeight);
+                        shaderWidth = outputWidth;
+                        shaderHeight = outputHeight;
+                        if (!shaderTexture || !SDL_SetTextureBlendMode(shaderTexture, SDL_BLENDMODE_NONE))
+                        {
+                            shaderError = SDL_GetError();
+                            useShader = false;
+                        }
+                    }
+                    if (useShader)
+                    {
+                        // O contrato FrameView é RGBA em bytes; a pipeline recebe ARGB em inteiros.
+                        shaderInput.resize(static_cast<std::size_t>(width) * frame.height);
+                        for (unsigned y = 0; y < frame.height; ++y)
+                        {
+                            const auto *row = pixels + static_cast<std::size_t>(y) * pitch;
+                            for (unsigned x = 0; x < width; ++x)
+                                shaderInput[static_cast<std::size_t>(y) * width + x] = 0xff000000u | (std::uint32_t(row[x * 4]) << 16) | (std::uint32_t(row[x * 4 + 1]) << 8) | row[x * 4 + 2];
+                        }
+                        if (!shaderPipeline->render(shaderInput.data(), static_cast<int>(width), {static_cast<int>(width), static_cast<int>(frame.height)},
+                                                    {outputWidth, outputHeight}, shaderOutput, shaderError))
+                            useShader = false;
+                        else
+                        {
+                            // ScaleFX pode retornar alfa zero; a tela do jogo é sempre opaca.
+                            for (auto &pixel : shaderOutput)
+                                pixel |= 0xff000000u;
+                            if (!SDL_UpdateTexture(shaderTexture, nullptr, shaderOutput.data(), outputWidth * sizeof(std::uint32_t)))
+                            {
+                                shaderError = SDL_GetError();
+                                useShader = false;
+                            }
+                            else
+                                displayTexture = shaderTexture;
+                        }
+                    }
+                }
+                if (shader != Shader::None && !useShader)
+                {
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Shaders", shaderError.c_str(), window);
+                    shader = Shader::None;
+                }
                 // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
                 const auto position = ImGui::GetCursorScreenPos();
                 ImGui::SetCursorScreenPos(ImVec2(position.x + (available.x - size.x) * 0.5f, position.y + (available.y - size.y) * 0.5f));
@@ -318,7 +407,7 @@ namespace R2SEGA8::Window
                     const int y = inside ? static_cast<int>((mouse.y - origin.y) * nativeSize.height / size.y) : -1;
                     callbacks.lightPhaser(x, y, acceptsPointer() && ImGui::IsMouseDown(ImGuiMouseButton_Left));
                 }
-                if (pixelArt)
+                if (pixelArt && !useShader)
                 {
                     const auto origin = ImGui::GetCursorScreenPos();
                     const auto viewport = ImGui::GetMainViewport()->Pos;
@@ -332,7 +421,7 @@ namespace R2SEGA8::Window
                     ImGui::GetWindowDrawList()->AddCallback(bilinear ? ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear
                                                                      : ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest,
                                                             nullptr);
-                    ImGui::Image(reinterpret_cast<ImTextureID>(videoTexture), size);
+                    ImGui::Image(reinterpret_cast<ImTextureID>(displayTexture), size);
                     ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
                 }
             }
@@ -353,6 +442,8 @@ namespace R2SEGA8::Window
                 ImGui::DestroyContext();
             if (videoTexture)
                 SDL_DestroyTexture(videoTexture);
+            if (shaderTexture)
+                SDL_DestroyTexture(shaderTexture);
             if (renderer)
                 SDL_DestroyRenderer(renderer);
             if (window)
@@ -621,6 +712,7 @@ namespace R2SEGA8::Window
                         }
                         ImGui::EndMenu();
                     }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Exit"))
                         state.requestExit();
                     ImGui::EndMenu();
@@ -629,8 +721,8 @@ namespace R2SEGA8::Window
                 {
                     const bool configurable = state.callbacks.executionSettings && state.callbacks.setExecutionSettings;
                     auto settings = configurable ? state.callbacks.executionSettings() : Common::ExecutionSettings{};
-                    if (ImGui::BeginMenu("Console Profile", configurable &&
-                                                                (!state.callbacks.consoleProfileAvailable || state.callbacks.consoleProfileAvailable())))
+                    if (ImGui::BeginMenu("Console Region", configurable &&
+                                                               (!state.callbacks.consoleProfileAvailable || state.callbacks.consoleProfileAvailable())))
                     {
                         for (const auto &option : {std::pair<const char *, Common::ConsoleProfile>{"Auto", Common::ConsoleProfile::Auto},
                                                    {"NTSC", Common::ConsoleProfile::NTSC},
@@ -645,6 +737,20 @@ namespace R2SEGA8::Window
                     ImGui::Separator();
                     if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
                         state.callbacks.setExecutionSettings(settings);
+                    ImGui::Separator();
+                    for (unsigned scale = 1; scale <= 5; ++scale)
+                    {
+                        char label[] = "1X", shortcut[] = "Ctrl+1";
+                        label[0] = static_cast<char>('0' + scale);
+                        shortcut[5] = static_cast<char>('0' + scale);
+                        if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
+                            state.pendingDisplayScale = scale;
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Borderless Fullscreen Stretched"))
+                        state.pendingFullscreen = Impl::Fullscreen::Stretched;
+                    if (ImGui::MenuItem("Borderless Fullscreen", "Ctrl+F"))
+                        state.pendingFullscreen = Impl::Fullscreen::Aspect;
                     ImGui::Separator();
                     if (ImGui::MenuItem("Bilinear Filter", nullptr, &settings.bilinearFilterEnabled, configurable))
                     {
@@ -674,30 +780,31 @@ namespace R2SEGA8::Window
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
-                    for (unsigned scale = 1; scale <= 5; ++scale)
+                    if (ImGui::MenuItem("Crop 8px from Left", nullptr, &settings.cropLeftEnabled, configurable))
                     {
-                        char label[] = "1X", shortcut[] = "Ctrl+1";
-                        label[0] = static_cast<char>('0' + scale);
-                        shortcut[5] = static_cast<char>('0' + scale);
-                        if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
-                            state.pendingDisplayScale = scale;
+                        state.callbacks.setExecutionSettings(settings);
+                        state.pendingDisplayScale = state.displayScale;
                     }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Borderless Fullscreen Stretched"))
-                        state.pendingFullscreen = Impl::Fullscreen::Stretched;
-                    if (ImGui::MenuItem("Borderless Fullscreen", "Ctrl+F"))
-                        state.pendingFullscreen = Impl::Fullscreen::Aspect;
                     ImGui::Separator();
                     if (ImGui::MenuItem("Render sprites", nullptr, &settings.renderSprites, configurable))
                         state.callbacks.setExecutionSettings(settings);
                     if (ImGui::MenuItem("Render tiles", nullptr, &settings.renderTiles, configurable))
                         state.callbacks.setExecutionSettings(settings);
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Crop 8px from Left", nullptr, &settings.cropLeftEnabled, configurable))
+#ifdef _WIN32
+                    if (ImGui::BeginMenu("Shaders"))
                     {
-                        state.callbacks.setExecutionSettings(settings);
-                        state.pendingDisplayScale = state.displayScale;
+                        for (const auto &option : {std::pair<Impl::Shader, const char *>{Impl::Shader::None, "None"},
+                                                   {Impl::Shader::Gauss, "Gauss Scanlines"},
+                                                   {Impl::Shader::HQ2, "HQ2"},
+                                                   {Impl::Shader::CRT, "CRT"},
+                                                   {Impl::Shader::CRT3D, "CRT 3D"},
+                                                   {Impl::Shader::ScaleFX, "ScaleFX"}})
+                            if (ImGui::MenuItem(option.second, nullptr, state.shader == option.first))
+                                state.shader = option.first;
+                        ImGui::EndMenu();
                     }
+#endif
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("Audio", state.callbacks.audioSettings && state.callbacks.setAudioSettings))
