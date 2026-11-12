@@ -1,5 +1,8 @@
 #include "Window.h"
 #include "FullscreenController.h"
+#include "DisplayMenu.h"
+#include "VideoLayout.h"
+#include "VideoPresenter.h"
 #include "FileManager.h"
 #include "DebugWindow.h"
 #include "NtscShaderPipeline.h"
@@ -36,32 +39,12 @@ namespace R2SEGA8::Window
         std::unique_ptr<DebugWindow> debugger;
         SDL_Window *window = nullptr;
         SDL_Renderer *renderer = nullptr;
-        SDL_Texture *videoTexture = nullptr;
-        SDL_Texture *shaderTexture = nullptr;
-        enum class Shader
-        {
-            None,
-            Gauss,
-            HQ2,
-            CRT,
-            CRT3D,
-            ScaleFX
-        };
-        Shader shader = Shader::None, initializedShader = Shader::None;
-        unsigned shaderSourceWidth = 0;
-        int shaderWidth = 0, shaderHeight = 0;
-        std::unique_ptr<NtscShaderPipeline> shaderPipeline;
-        std::vector<std::uint32_t> shaderInput, shaderOutput;
-        unsigned videoWidth = 0, videoHeight = 0;
-        std::vector<std::uint8_t> scanlinePixels;
+        using Shader = DisplayShader;
+        Shader shader = Shader::None;
+        VideoPresenter videoPresenter;
         DisplaySize nativeSize;
         unsigned displayScale = 3, pendingDisplayScale = 0;
-        enum class Fullscreen
-        {
-            None,
-            Stretched,
-            Aspect
-        };
+        using Fullscreen = FullscreenMode;
         Fullscreen fullscreen = Fullscreen::None, pendingFullscreen = Fullscreen::None;
         FullscreenController fullscreenController;
         unsigned stateSlot = 1;
@@ -248,186 +231,6 @@ namespace R2SEGA8::Window
                 updateTitle();
             }
         }
-        struct PixelArtDraw
-        {
-            SDL_Renderer *renderer;
-            SDL_Texture *texture;
-            SDL_FRect destination;
-        };
-        // O backend ImGui sobrescreve o filtro das imagens; desenha Pixel Art diretamente pela SDL.
-        static void drawPixelArt(const ImDrawList *, const ImDrawCmd *command)
-        {
-            const auto &draw = *static_cast<const PixelArtDraw *>(command->UserCallbackData);
-            SDL_Rect clip{};
-            const bool clipped = SDL_RenderClipEnabled(draw.renderer);
-            if ((clipped && !SDL_GetRenderClipRect(draw.renderer, &clip)) ||
-                !SDL_SetRenderClipRect(draw.renderer, nullptr) ||
-                !SDL_SetTextureScaleMode(draw.texture, SDL_SCALEMODE_PIXELART) ||
-                !SDL_RenderTexture(draw.renderer, draw.texture, nullptr, &draw.destination) ||
-                !SDL_SetRenderClipRect(draw.renderer, clipped ? &clip : nullptr))
-                throw std::runtime_error(SDL_GetError());
-        }
-
-        // Copia um quadro neutro para a textura; os bytes do callback não escapam desta chamada.
-        void drawFrame(FrameView frame)
-        {
-            if (!frame.rgba || !frame.width || !frame.height)
-                return;
-            const auto limit = static_cast<unsigned>(std::numeric_limits<int>::max());
-            if (frame.width > limit / 4 || frame.height > limit || frame.pitch > limit || frame.pitch < frame.width * 4)
-                throw std::invalid_argument("Invalid presentation frame dimensions or pitch.");
-            const auto settings = callbacks.executionSettings ? callbacks.executionSettings() : Common::ExecutionSettings{};
-            const unsigned crop = settings.cropLeftEnabled && frame.width > 8 && nativeSize.width > 8 ? 8 : 0;
-            const unsigned width = frame.width - crop;
-            const bool pixelArt = settings.pixelArtEnabled;
-            const bool bilinear = settings.bilinearFilterEnabled && !pixelArt;
-            if (!videoTexture || videoWidth != width || videoHeight != frame.height)
-            {
-                if (videoTexture)
-                    SDL_DestroyTexture(videoTexture);
-                videoTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
-                                                 static_cast<int>(width), static_cast<int>(frame.height));
-                if (!videoTexture)
-                    throw std::runtime_error(SDL_GetError());
-                videoWidth = width;
-                videoHeight = frame.height;
-                if (!SDL_SetTextureScaleMode(videoTexture, pixelArt ? SDL_SCALEMODE_PIXELART : bilinear ? SDL_SCALEMODE_LINEAR
-                                                                                                        : SDL_SCALEMODE_NEAREST))
-                    throw std::runtime_error(SDL_GetError());
-            }
-            const auto *pixels = frame.rgba + crop * 4;
-            int pitch = static_cast<int>(frame.pitch);
-            if (settings.scanlinesEnabled)
-            {
-                const auto rowBytes = static_cast<std::size_t>(width) * 4;
-                scanlinePixels.resize(rowBytes * frame.height);
-                const auto level = std::clamp(settings.scanlineLevel, 5u, 25u);
-                for (unsigned y = 0; y < frame.height; ++y)
-                {
-                    const auto *source = frame.rgba + static_cast<std::size_t>(y) * frame.pitch + crop * 4;
-                    auto *destination = scanlinePixels.data() + static_cast<std::size_t>(y) * rowBytes;
-                    std::copy_n(source, rowBytes, destination);
-                    if (y % 2 != 0)
-                        for (std::size_t x = 0; x < rowBytes; x += 4)
-                            for (unsigned channel = 0; channel < 3; ++channel)
-                                destination[x + channel] = static_cast<std::uint8_t>(destination[x + channel] * (100 - level) / 100);
-                }
-                pixels = scanlinePixels.data();
-                pitch = static_cast<int>(rowBytes);
-            }
-            if (!SDL_UpdateTexture(videoTexture, nullptr, pixels, pitch))
-                throw std::runtime_error(SDL_GetError());
-            const auto available = ImGui::GetContentRegionAvail();
-            const auto visibleWidth = displayWidth();
-            const float scale = std::min(available.x / visibleWidth, available.y / nativeSize.height);
-            const ImVec2 size = fullscreen == Fullscreen::Stretched ? available : ImVec2(visibleWidth * scale, nativeSize.height * scale);
-            if (scale > 0)
-            {
-                SDL_Texture *displayTexture = videoTexture;
-                bool useShader = shader != Shader::None;
-                std::string shaderError;
-                if (useShader && (initializedShader != shader || (shader == Shader::Gauss && shaderSourceWidth != frame.width)))
-                {
-                    const char *preset = shader == Shader::Gauss ? (frame.width <= 160 ? "ntsc/ntsc-160px-gauss-scanline.cgp" : "ntsc/ntsc-256px-gauss-scanline.cgp") : shader == Shader::HQ2 ? "hqx/hq2x-visual.cgp"
-                                                                                                                                                                    : shader == Shader::CRT   ? "crt/crt-hyllian-3d-nes.cgp"
-                                                                                                                                                                    : shader == Shader::CRT3D ? "crt/crt-lottes.cgp"
-                                                                                                                                                                                              : "scalefx/scalefx-visual.cgp";
-                    auto path = std::filesystem::path(SDL_GetBasePath()) / "shaders" / preset;
-                    if (!std::filesystem::exists(path))
-                        path = std::filesystem::path("shaders") / preset;
-                    auto candidate = std::make_unique<NtscShaderPipeline>();
-                    if (candidate->initialize(path, shaderError))
-                    {
-                        shaderPipeline = std::move(candidate);
-                        initializedShader = shader;
-                        shaderSourceWidth = frame.width;
-                    }
-                    else
-                        useShader = false;
-                }
-                if (useShader)
-                {
-                    const auto &io = ImGui::GetIO();
-                    const int outputWidth = std::max(1, static_cast<int>(std::lround(size.x * io.DisplayFramebufferScale.x)));
-                    const int outputHeight = std::max(1, static_cast<int>(std::lround(size.y * io.DisplayFramebufferScale.y)));
-                    if (!shaderTexture || shaderWidth != outputWidth || shaderHeight != outputHeight)
-                    {
-                        if (shaderTexture)
-                            SDL_DestroyTexture(shaderTexture);
-                        shaderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outputWidth, outputHeight);
-                        shaderWidth = outputWidth;
-                        shaderHeight = outputHeight;
-                        if (!shaderTexture || !SDL_SetTextureBlendMode(shaderTexture, SDL_BLENDMODE_NONE))
-                        {
-                            shaderError = SDL_GetError();
-                            useShader = false;
-                        }
-                    }
-                    if (useShader)
-                    {
-                        // O contrato FrameView é RGBA em bytes; a pipeline recebe ARGB em inteiros.
-                        shaderInput.resize(static_cast<std::size_t>(width) * frame.height);
-                        for (unsigned y = 0; y < frame.height; ++y)
-                        {
-                            const auto *row = pixels + static_cast<std::size_t>(y) * pitch;
-                            for (unsigned x = 0; x < width; ++x)
-                                shaderInput[static_cast<std::size_t>(y) * width + x] = 0xff000000u | (std::uint32_t(row[x * 4]) << 16) | (std::uint32_t(row[x * 4 + 1]) << 8) | row[x * 4 + 2];
-                        }
-                        if (!shaderPipeline->render(shaderInput.data(), static_cast<int>(width), {static_cast<int>(width), static_cast<int>(frame.height)},
-                                                    {outputWidth, outputHeight}, shaderOutput, shaderError))
-                            useShader = false;
-                        else
-                        {
-                            // ScaleFX pode retornar alfa zero; a tela do jogo é sempre opaca.
-                            for (auto &pixel : shaderOutput)
-                                pixel |= 0xff000000u;
-                            if (!SDL_UpdateTexture(shaderTexture, nullptr, shaderOutput.data(), outputWidth * sizeof(std::uint32_t)))
-                            {
-                                shaderError = SDL_GetError();
-                                useShader = false;
-                            }
-                            else
-                                displayTexture = shaderTexture;
-                        }
-                    }
-                }
-                if (shader != Shader::None && !useShader)
-                {
-                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Shaders", shaderError.c_str(), window);
-                    shader = Shader::None;
-                }
-                // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
-                const auto position = ImGui::GetCursorScreenPos();
-                ImGui::SetCursorScreenPos(ImVec2(position.x + (available.x - size.x) * 0.5f, position.y + (available.y - size.y) * 0.5f));
-                if (callbacks.lightPhaser)
-                {
-                    const auto origin = ImGui::GetCursorScreenPos();
-                    const auto mouse = ImGui::GetIO().MousePos;
-                    const bool inside = acceptsPointer() && mouse.x >= origin.x && mouse.y >= origin.y &&
-                                        mouse.x < origin.x + size.x && mouse.y < origin.y + size.y;
-                    const int x = inside ? static_cast<int>((mouse.x - origin.x) * visibleWidth / size.x) + static_cast<int>(crop) : -1;
-                    const int y = inside ? static_cast<int>((mouse.y - origin.y) * nativeSize.height / size.y) : -1;
-                    callbacks.lightPhaser(x, y, acceptsPointer() && ImGui::IsMouseDown(ImGuiMouseButton_Left));
-                }
-                if (pixelArt && !useShader)
-                {
-                    const auto origin = ImGui::GetCursorScreenPos();
-                    const auto viewport = ImGui::GetMainViewport()->Pos;
-                    PixelArtDraw draw{renderer, videoTexture, {origin.x - viewport.x, origin.y - viewport.y, size.x, size.y}};
-                    ImGui::GetWindowDrawList()->AddCallback(drawPixelArt, &draw, sizeof(draw));
-                    ImGui::Dummy(size);
-                }
-                else
-                {
-                    // O backend aplica o sampler selecionado à textura de vídeo ao desenhar.
-                    ImGui::GetWindowDrawList()->AddCallback(bilinear ? ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear
-                                                                     : ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest,
-                                                            nullptr);
-                    ImGui::Image(reinterpret_cast<ImTextureID>(displayTexture), size);
-                    ImGui::GetWindowDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
-                }
-            }
-        }
         // Libera somente os recursos cuja inicialização foi concluída.
         ~Impl()
         {
@@ -442,10 +245,7 @@ namespace R2SEGA8::Window
                 ImGui_ImplSDL3_Shutdown();
             if (contextReady)
                 ImGui::DestroyContext();
-            if (videoTexture)
-                SDL_DestroyTexture(videoTexture);
-            if (shaderTexture)
-                SDL_DestroyTexture(shaderTexture);
+            videoPresenter.release();
             if (renderer)
                 SDL_DestroyRenderer(renderer);
             if (window)
@@ -720,106 +520,8 @@ namespace R2SEGA8::Window
                         state.requestExit();
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Display"))
-                {
-                    const bool configurable = state.callbacks.executionSettings && state.callbacks.setExecutionSettings;
-                    auto settings = configurable ? state.callbacks.executionSettings() : Common::ExecutionSettings{};
-                    if (ImGui::BeginMenu("Console Region", configurable &&
-                                                               (!state.callbacks.consoleProfileAvailable || state.callbacks.consoleProfileAvailable())))
-                    {
-                        for (const auto &option : {std::pair<const char *, Common::ConsoleProfile>{"Auto", Common::ConsoleProfile::Auto},
-                                                   {"NTSC", Common::ConsoleProfile::NTSC},
-                                                   {"PAL", Common::ConsoleProfile::PAL}})
-                            if (ImGui::MenuItem(option.first, nullptr, settings.consoleProfile == option.second))
-                            {
-                                settings.consoleProfile = option.second;
-                                state.callbacks.setExecutionSettings(settings);
-                            }
-                        ImGui::EndMenu();
-                    }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
-                        state.callbacks.setExecutionSettings(settings);
-                    ImGui::Separator();
-                    for (unsigned scale = 1; scale <= 5; ++scale)
-                    {
-                        char label[] = "1X", shortcut[] = "Ctrl+1";
-                        label[0] = static_cast<char>('0' + scale);
-                        shortcut[5] = static_cast<char>('0' + scale);
-                        if (ImGui::MenuItem(label, shortcut, state.displayScale == scale))
-                            state.pendingDisplayScale = scale;
-                    }
-                    ImGui::Separator();
-                    if (ImGui::BeginMenu("FullScreen Resolution"))
-                    {
-                        auto &controller = state.fullscreenController;
-                        if (ImGui::MenuItem("Desktop Resolution", nullptr, controller.selected() < 0))
-                            controller.selectDesktop();
-                        for (int i = 0; i < controller.count(); ++i)
-                            if (ImGui::MenuItem(controller.label(i), nullptr, controller.selected() == i, controller.available(i)))
-                                controller.select(state.window, i);
-                        ImGui::EndMenu();
-                    }
-                    if (ImGui::MenuItem("Fullscreen Stretched"))
-                        state.pendingFullscreen = Impl::Fullscreen::Stretched;
-                    if (ImGui::MenuItem("Fullscreen", "Ctrl+F ou Alt+Enter"))
-                        state.pendingFullscreen = Impl::Fullscreen::Aspect;
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Bilinear Filter", nullptr, &settings.bilinearFilterEnabled, configurable))
-                    {
-                        if (settings.bilinearFilterEnabled)
-                            settings.pixelArtEnabled = false;
-                        state.callbacks.setExecutionSettings(settings);
-                    }
-                    if (ImGui::MenuItem("Pixel Art", nullptr, &settings.pixelArtEnabled, configurable))
-                    {
-                        if (settings.pixelArtEnabled)
-                            settings.bilinearFilterEnabled = false;
-                        state.callbacks.setExecutionSettings(settings);
-                    }
-                    if (ImGui::MenuItem("Scanlines", nullptr, &settings.scanlinesEnabled, configurable))
-                        state.callbacks.setExecutionSettings(settings);
-                    if (ImGui::BeginMenu("Scanline Levels", configurable && settings.scanlinesEnabled))
-                    {
-                        for (unsigned level = 5; level <= 25; level += 5)
-                        {
-                            const auto label = std::to_string(level) + "%";
-                            if (ImGui::MenuItem(label.c_str(), nullptr, settings.scanlineLevel == level))
-                            {
-                                settings.scanlineLevel = level;
-                                state.callbacks.setExecutionSettings(settings);
-                            }
-                        }
-                        ImGui::EndMenu();
-                    }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Crop 8px from Left", nullptr, &settings.cropLeftEnabled, configurable))
-                    {
-                        state.callbacks.setExecutionSettings(settings);
-                        state.pendingDisplayScale = state.displayScale;
-                    }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Render sprites", nullptr, &settings.renderSprites, configurable))
-                        state.callbacks.setExecutionSettings(settings);
-                    if (ImGui::MenuItem("Render tiles", nullptr, &settings.renderTiles, configurable))
-                        state.callbacks.setExecutionSettings(settings);
-                    ImGui::Separator();
-#ifdef _WIN32
-                    if (ImGui::BeginMenu("Shaders"))
-                    {
-                        for (const auto &option : {std::pair<Impl::Shader, const char *>{Impl::Shader::None, "None"},
-                                                   {Impl::Shader::Gauss, "Gauss Scanlines"},
-                                                   {Impl::Shader::HQ2, "HQ2"},
-                                                   {Impl::Shader::CRT, "CRT"},
-                                                   {Impl::Shader::CRT3D, "CRT 3D"},
-                                                   {Impl::Shader::ScaleFX, "ScaleFX"}})
-                            if (ImGui::MenuItem(option.second, nullptr, state.shader == option.first))
-                                state.shader = option.first;
-                        ImGui::EndMenu();
-                    }
-#endif
-                    ImGui::EndMenu();
-                }
+                drawDisplayMenu({state.callbacks, state.fullscreenController, state.window, state.displayScale,
+                                 state.pendingDisplayScale, state.pendingFullscreen, state.shader});
                 if (ImGui::BeginMenu("Audio", state.callbacks.audioSettings && state.callbacks.setAudioSettings))
                 {
                     auto settings = state.callbacks.audioSettings();
@@ -912,7 +614,8 @@ namespace R2SEGA8::Window
                 ImGui::EndMenuBar();
             }
             if (state.callbacks.frame)
-                state.drawFrame(state.callbacks.frame());
+                state.videoPresenter.draw(state.callbacks.frame(), state.window, state.renderer, state.nativeSize,
+                                          state.displayWidth(), state.fullscreen, state.shader, state.callbacks, state.acceptsPointer());
             // Consome as consultas antes das ações, que podem invalidar os bytes apresentados.
             if (!fullscreen)
                 state.files.draw();
