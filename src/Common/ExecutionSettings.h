@@ -31,5 +31,6 @@ namespace R2SEGA8::Common
         bool invert12Enabled = false;
         bool lightPhaserEnabled = false;
         bool invertT1112Enabled = false;
+        bool invertT1T221Enabled = false;
     };
 }

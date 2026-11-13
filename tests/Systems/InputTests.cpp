@@ -237,17 +237,19 @@ namespace
         const Button normal[] = {Button::A, Button::B, Button::TurboA, Button::TurboB};
         const Button inverted[] = {Button::B, Button::A, Button::TurboA, Button::TurboB};
         const Button changed[] = {Button::B, Button::TurboB, Button::A, Button::TurboA};
+        const Button changedInverted[] = {Button::A, Button::TurboA, Button::B, Button::TurboB};
         for (int i = 0; i < 4; ++i)
         {
             key(input, keys[i], true);
             first.button(physical[i], true);
             pump(input);
-            for (int mode = 0; mode < 3; ++mode)
+            for (int mode = 0; mode < 4; ++mode)
             {
                 settings.invert12Enabled = mode == 1;
                 settings.invertT1112Enabled = mode == 2;
+                settings.invertT1T221Enabled = mode == 3;
                 const auto expected = mask(mode == 0 ? normal[i] : mode == 1 ? inverted[i]
-                                                                             : changed[i]);
+                                                : mode == 2 ? changed[i] : changedInverted[i]);
                 const auto state = input.update(true, settings);
                 check(state[0] == expected && state[1] == expected, "Button modes must affect keyboard and gamepad for both players");
             }

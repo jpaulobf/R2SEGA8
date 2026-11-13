@@ -474,6 +474,7 @@ namespace R2SEGA8::Window
         ImGui::NewFrame();
         const auto *viewport = ImGui::GetMainViewport();
         const bool fullscreen = state.fullscreen != Impl::Fullscreen::None;
+        bool openAbout = false;
         ImGui::SetNextWindowPos(fullscreen ? viewport->Pos : viewport->WorkPos);
         ImGui::SetNextWindowSize(fullscreen ? viewport->Size : viewport->WorkSize);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -558,6 +559,9 @@ namespace R2SEGA8::Window
                 if (ImGui::BeginMenu("Input", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
                 {
                     auto settings = state.callbacks.executionSettings();
+                    if (ImGui::MenuItem("Enable Light Phaser", nullptr, &settings.lightPhaserEnabled))
+                        state.callbacks.setExecutionSettings(settings);
+                    ImGui::Separator();
                     if (ImGui::BeginMenu("Player Controller", state.callbacks.playerUsesJoystick && state.callbacks.setPlayerJoystick))
                     {
                         for (unsigned player = 0; player < 2; ++player)
@@ -575,17 +579,24 @@ namespace R2SEGA8::Window
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Enable Light Phaser", nullptr, &settings.lightPhaserEnabled))
-                        state.callbacks.setExecutionSettings(settings);
                     if (ImGui::MenuItem("Invert buttons: 1 and 2", nullptr, &settings.invert12Enabled))
                     {
                         settings.invertT1112Enabled = false;
+                        settings.invertT1T221Enabled = false;
                         state.callbacks.setExecutionSettings(settings);
                     }
 
-                    if (ImGui::MenuItem("Change buttons: T1 goes 1, T2 goes T1, 2 goes T2, 1 goes 2", nullptr, &settings.invertT1112Enabled))
+                    if (ImGui::MenuItem("Use Y/B Buttons for 1/2 (SNES Style)", nullptr, &settings.invertT1112Enabled))
                     {
                         settings.invert12Enabled = false;
+                        settings.invertT1T221Enabled = false;
+                        state.callbacks.setExecutionSettings(settings);
+                    }
+
+                    if (ImGui::MenuItem("Use B/Y Buttons for 1/2 (SNES Style Inverted)", nullptr, &settings.invertT1T221Enabled))
+                    {
+                        settings.invert12Enabled = false;
+                        settings.invertT1112Enabled = false;
                         state.callbacks.setExecutionSettings(settings);
                     }
                     ImGui::Separator();
@@ -594,6 +605,8 @@ namespace R2SEGA8::Window
                         std::array<int, 10> order{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
                         if (settings.invertT1112Enabled)
                             order = {0, 1, 2, 3, 6, 4, 7, 5, 8, 9};
+                        else if (settings.invertT1T221Enabled)
+                            order = {0, 1, 2, 3, 4, 6, 5, 7, 8, 9};
                         else if (settings.invert12Enabled)
                             order = {0, 1, 2, 3, 5, 4, 6, 7, 8, 9};
                         state.keyboardDialog.open(order);
@@ -648,7 +661,24 @@ namespace R2SEGA8::Window
                     ImGui::EndDisabled();
                     ImGui::EndMenu();
                 }
+                if (ImGui::BeginMenu("About"))
+                {
+                    openAbout = ImGui::MenuItem("About R2SEGA8");
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMenuBar();
+            }
+            if (openAbout)
+                ImGui::OpenPopup("About R2SEGA8");
+            ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            bool aboutVisible = true;
+            if (ImGui::BeginPopupModal("About R2SEGA8", &aboutVisible, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+            {
+                ImGui::TextUnformatted("Software livre e aberto para a comunidade.");
+                ImGui::TextUnformatted("Ver licen\xC3\xA7" "a de uso.");
+                ImGui::Spacing();
+                ImGui::TextUnformatted("Vers\xC3\xA3" "o: " R2_APP_VERSION " - Data: 13/11/2026");
+                ImGui::EndPopup();
             }
             if (state.callbacks.frame)
                 state.videoPresenter.draw(state.callbacks.frame(), state.window, state.renderer, state.nativeSize,

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(R2SEGA8 VERSION 0.5.6 LANGUAGES C CXX)
+set_source_files_properties(src/Window/Window.cpp PROPERTIES COMPILE_DEFINITIONS "R2_APP_VERSION=\"${PROJECT_VERSION}\"")
 
 if(MSVC)
     add_compile_options(/utf-8)

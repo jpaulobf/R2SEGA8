@@ -259,6 +259,18 @@ namespace R2SEGA8::Systems
                 if (original & Common::mask(Button::A)) // j
                     buttons |= Common::mask(Button::B);
             }
+            else if (settings.invertT1T221Enabled)
+            {
+                buttons &= ~actionMask;
+                if (original & Common::mask(Button::TurboA)) // u
+                    buttons |= Common::mask(Button::B);
+                if (original & Common::mask(Button::TurboB)) // i
+                    buttons |= Common::mask(Button::TurboB);
+                if (original & Common::mask(Button::B)) // k
+                    buttons |= Common::mask(Button::TurboA);
+                if (original & Common::mask(Button::A)) // j
+                    buttons |= Common::mask(Button::A);
+            }
             else if (settings.invert12Enabled)
             {
                 buttons &= ~(Common::mask(Button::A) | Common::mask(Button::B));
