@@ -64,12 +64,41 @@ namespace R2SEGA8::Systems
         rewindPressed_ = false;
     }
 
+    void Input::setPlayerJoystick(unsigned player, bool enabled)
+    {
+        if (player >= 2)
+            throw std::out_of_range("Invalid input player.");
+        if (playerJoystick_[player] == enabled)
+            return;
+        playerJoystick_[player] = enabled;
+        for (auto it = pressedKeys_.begin(); it != pressedKeys_.end();)
+            if (keyMap_.at(*it).player == player)
+                it = pressedKeys_.erase(it);
+            else
+                ++it;
+    }
+
+    bool Input::playerUsesJoystick(unsigned player) const
+    {
+        if (player >= 2)
+            throw std::out_of_range("Invalid input player.");
+        return playerJoystick_[player];
+    }
+
+    int Input::playerForSlot(unsigned slot) const
+    {
+        for (unsigned player = 0; player < 2; ++player)
+            if (playerJoystick_[player] && slot-- == 0)
+                return static_cast<int>(player);
+        return -1;
+    }
+
     bool Input::isFastForwardPressed() const
     {
         if (fastForwardPressed_)
             return true;
         for (const auto &entry : gamepads_)
-            if (SDL_GamepadConnected(entry.second.handle.get()) &&
+            if (playerForSlot(entry.second.player) >= 0 && SDL_GamepadConnected(entry.second.handle.get()) &&
                 SDL_GetGamepadAxis(entry.second.handle.get(), SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000)
                 return true;
         return false;
@@ -80,7 +109,7 @@ namespace R2SEGA8::Systems
         if (rewindPressed_)
             return true;
         for (const auto &entry : gamepads_)
-            if (SDL_GamepadConnected(entry.second.handle.get()) &&
+            if (playerForSlot(entry.second.player) >= 0 && SDL_GamepadConnected(entry.second.handle.get()) &&
                 SDL_GetGamepadAxis(entry.second.handle.get(), SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000)
                 return true;
         return false;
@@ -139,7 +168,18 @@ namespace R2SEGA8::Systems
             openGamepad(event.gdevice.which);
         else if (event.type == SDL_EVENT_GAMEPAD_REMOVED)
         {
-            gamepads_.erase(event.gdevice.which);
+            const auto removed = gamepads_.find(event.gdevice.which);
+            if (removed != gamepads_.end())
+            {
+                const unsigned slot = removed->second.player;
+                gamepads_.erase(removed);
+                for (auto &entry : gamepads_)
+                    if (entry.second.player > slot)
+                    {
+                        --entry.second.player;
+                        SDL_SetGamepadPlayerIndex(entry.second.handle.get(), static_cast<int>(entry.second.player));
+                    }
+            }
             if (initialized_)
                 discoverGamepads();
         }
@@ -176,14 +216,16 @@ namespace R2SEGA8::Systems
         for (auto key : pressedKeys_)
         {
             const auto &binding = keyMap_.at(key);
-            result[binding.player] |= Common::mask(binding.button);
+            if (!playerJoystick_[binding.player])
+                result[binding.player] |= Common::mask(binding.button);
         }
         for (const auto &entry : gamepads_)
         {
             const auto &device = entry.second;
-            if (!SDL_GamepadConnected(device.handle.get()))
+            const int player = playerForSlot(device.player);
+            if (player < 0 || !SDL_GamepadConnected(device.handle.get()))
                 continue;
-            auto &buttons = result[device.player];
+            auto &buttons = result[static_cast<unsigned>(player)];
             for (const auto &binding : gamepadMap_)
                 if (SDL_GetGamepadButton(device.handle.get(), binding.first))
                     buttons |= Common::mask(binding.second);

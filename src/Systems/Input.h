@@ -9,7 +9,7 @@
 
 namespace R2SEGA8::Systems
 {
-    // Adaptador do host: combina teclado e gamepads sem conhecer o hardware dos controles Sega.
+    // Adaptador do host para teclado e gamepads dos dois jogadores.
     class Input
     {
     public:
@@ -55,6 +55,10 @@ namespace R2SEGA8::Systems
         // Associa uma posição de botão físico, usando a mesma configuração nos dois gamepads.
         void mapGamepad(SDL_GamepadButton physical, Common::Button button);
 
+        // Seleciona a fonte de entrada de cada jogador (0 ou 1).
+        void setPlayerJoystick(unsigned player, bool enabled);
+        bool playerUsesJoystick(unsigned player) const;
+
         // Informa os dispositivos abertos para diagnóstico e testes de conexão/remoção.
         std::size_t gamepadCount() const { return gamepads_.size(); }
 
@@ -71,15 +75,17 @@ namespace R2SEGA8::Systems
             unsigned player;
         };
 
-        // Descobre dispositivos conectados sem deslocar a associação de jogadores já existentes.
+        // Descobre dispositivos conectados na ordem em que foram reconhecidos.
         bool discoverGamepads();
 
-        // Ocupa a primeira vaga livre entre os dois jogadores; ignora duplicações e controles excedentes.
+        // Ocupa a primeira vaga livre entre os dois dispositivos; ignora duplicações e controles excedentes.
         void openGamepad(SDL_JoystickID id);
         std::map<SDL_Keycode, Binding> keyMap_;
         std::map<SDL_GamepadButton, Common::Button> gamepadMap_;
         std::set<SDL_Keycode> pressedKeys_;
         std::map<SDL_JoystickID, Device> gamepads_;
+        bool playerJoystick_[2] = {false, false};
+        int playerForSlot(unsigned slot) const;
         bool initialized_ = false;
         bool fastForwardPressed_ = false;
         bool rewindPressed_ = false;

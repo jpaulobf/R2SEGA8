@@ -108,6 +108,10 @@ namespace R2SEGA8::Window
         // Aplica à entrada o mapeamento carregado ou confirmado no diálogo.
         std::function<void(const R2Keyboard::Mapping &)> setKeyboardMapping;
 
+        // Consulta e altera a fonte de entrada de cada jogador.
+        std::function<bool(unsigned)> playerUsesJoystick;
+        std::function<void(unsigned, bool)> setPlayerJoystick;
+
         // Encaminha eventos do host e informa se a interface permite entrada de jogo neste instante.
         std::function<void(const SDL_Event &, bool)> inputEvent;
 

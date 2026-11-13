@@ -182,6 +182,8 @@ namespace
         first.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, -32768);
         second.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, -32768);
         Input input;
+        input.setPlayerJoystick(0, true);
+        input.setPlayerJoystick(1, true);
         check(input.initialize(), SDL_GetError());
         pump(input);
         check(!input.isFastForwardPressed(), "Released triggers must not activate fast-forward");
@@ -215,6 +217,19 @@ namespace
         Pad second;
         pump(input);
         check(input.gamepadCount() == 2, "Hotplug must open the second player");
+        first.button(SDL_GAMEPAD_BUTTON_SOUTH, true);
+        pump(input);
+        check(input.update() == R2SEGA8::Common::InputState{}, "Keyboard is the default for both players");
+        input.setPlayerJoystick(1, true);
+        check(input.update()[1] == mask(Button::A), "Player two alone uses the first gamepad");
+        key(input, SDLK_Z, true);
+        check(input.update()[1] == mask(Button::A), "Player two keyboard is disabled when using a gamepad");
+        first.button(SDL_GAMEPAD_BUTTON_SOUTH, false);
+        pump(input);
+        check(input.update()[1] == 0, "Keyboard presses do not leak into joystick mode");
+        input.setPlayerJoystick(1, false);
+        check(input.update()[1] == 0, "Switching sources clears held keyboard keys");
+        input.setPlayerJoystick(1, true);
         R2SEGA8::Common::ExecutionSettings settings;
         const SDL_Keycode keys[] = {SDLK_J, SDLK_K, SDLK_U, SDLK_I};
         const SDL_GamepadButton physical[] = {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
@@ -225,7 +240,7 @@ namespace
         for (int i = 0; i < 4; ++i)
         {
             key(input, keys[i], true);
-            second.button(physical[i], true);
+            first.button(physical[i], true);
             pump(input);
             for (int mode = 0; mode < 3; ++mode)
             {
@@ -237,24 +252,41 @@ namespace
                 check(state[0] == expected && state[1] == expected, "Button modes must affect keyboard and gamepad for both players");
             }
             key(input, keys[i], false);
-            second.button(physical[i], false);
+            first.button(physical[i], false);
             pump(input);
         }
+        input.setPlayerJoystick(1, false);
+        input.setPlayerJoystick(0, true);
+        first.button(SDL_GAMEPAD_BUTTON_WEST, true);
+        key(input, SDLK_UP, true);
+        pump(input);
+        check(input.update()[0] == mask(Button::TurboA) && input.update()[1] == mask(Button::Up),
+              "Player one uses the first gamepad while player two uses keyboard");
+        first.button(SDL_GAMEPAD_BUTTON_WEST, false);
+        key(input, SDLK_UP, false);
+        input.setPlayerJoystick(1, true);
+        second.button(SDL_GAMEPAD_BUTTON_WEST, true);
+        second.button(SDL_GAMEPAD_BUTTON_NORTH, true);
+        pump(input);
+        check(input.update()[1] == (mask(Button::TurboA) | mask(Button::TurboB)),
+              "Both turbo buttons work on the second gamepad");
+        second.button(SDL_GAMEPAD_BUTTON_WEST, false);
+        second.button(SDL_GAMEPAD_BUTTON_NORTH, false);
         first.button(SDL_GAMEPAD_BUTTON_SOUTH, true);
         second.button(SDL_GAMEPAD_BUTTON_EAST, true);
         pump(input);
         check(input.update()[0] == mask(Button::A) && input.update()[1] == mask(Button::B), "Gamepads must remain independent players");
         key(input, SDLK_W, true);
-        check(input.update()[0] == (mask(Button::A) | mask(Button::Up)), "Keyboard and gamepad combine by OR");
+        check(input.update()[0] == mask(Button::A), "Keyboard must not affect a joystick player");
         key(input, SDLK_W, false);
         first.button(SDL_GAMEPAD_BUTTON_SOUTH, false);
         first.button(SDL_GAMEPAD_BUTTON_WEST, true);
-        key(input, SDLK_J, true);
+        first.button(SDL_GAMEPAD_BUTTON_SOUTH, true);
         pump(input);
         const auto combined = input.update()[0];
         check((combined & mask(Button::A)) && (combined & mask(Button::TurboA)), "Normal and turbo sources must both be retained");
         check(R2SEGA8::Common::controllerButtons(combined, 0) & 0x10, "Normal press wins over inactive turbo");
-        key(input, SDLK_J, false);
+        first.button(SDL_GAMEPAD_BUTTON_SOUTH, false);
         first.button(SDL_GAMEPAD_BUTTON_WEST, false);
         pump(input);
         first.axis(SDL_GAMEPAD_AXIS_LEFTX, 16000);
@@ -275,14 +307,14 @@ namespace
         check(input.gamepadCount() == 2, "Only two controllers are assigned at once");
         first.detach();
         pump(input);
-        check(input.gamepadCount() == 2 && input.update()[0] == 0 && input.update()[1] == mask(Button::A),
-              "Removing P1 must preserve P2 and assign the waiting controller to the free slot");
+        check(input.gamepadCount() == 2 && input.update()[0] == mask(Button::A) && input.update()[1] == 0,
+              "Removing the first gamepad must shift the remaining devices forward");
         waiting.button(SDL_GAMEPAD_BUTTON_DPAD_LEFT, true);
         pump(input);
-        check(input.update()[0] == mask(Button::Left), "Replacement controller must occupy the available player slot");
+        check(input.update()[1] == mask(Button::Left), "Waiting gamepad must become the second device");
         waiting.detach();
         pump(input);
-        check(input.gamepadCount() == 1 && input.update()[0] == 0, "Device removal releases its buttons");
+        check(input.gamepadCount() == 1 && input.update()[1] == 0, "Device removal releases its buttons");
         SDL_Event remap{};
         remap.type = SDL_EVENT_GAMEPAD_REMAPPED;
         remap.gdevice.which = second.id;

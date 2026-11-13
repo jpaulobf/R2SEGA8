@@ -558,6 +558,23 @@ namespace R2SEGA8::Window
                 if (ImGui::BeginMenu("Input", state.callbacks.executionSettings && state.callbacks.setExecutionSettings))
                 {
                     auto settings = state.callbacks.executionSettings();
+                    if (ImGui::BeginMenu("Player Controller", state.callbacks.playerUsesJoystick && state.callbacks.setPlayerJoystick))
+                    {
+                        for (unsigned player = 0; player < 2; ++player)
+                        {
+                            if (ImGui::BeginMenu(player == 0 ? "Player 1" : "Player 2"))
+                            {
+                                const bool joystick = state.callbacks.playerUsesJoystick(player);
+                                if (ImGui::MenuItem("Keyboard", nullptr, !joystick))
+                                    state.callbacks.setPlayerJoystick(player, false);
+                                if (ImGui::MenuItem("Joystick", nullptr, joystick))
+                                    state.callbacks.setPlayerJoystick(player, true);
+                                ImGui::EndMenu();
+                            }
+                        }
+                        ImGui::EndMenu();
+                    }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Enable Light Phaser", nullptr, &settings.lightPhaserEnabled))
                         state.callbacks.setExecutionSettings(settings);
                     if (ImGui::MenuItem("Invert buttons: 1 and 2", nullptr, &settings.invert12Enabled))
