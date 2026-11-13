@@ -7,20 +7,7 @@ namespace R2SEGA8::Systems
     Input::Input()
     {
         using Common::Button;
-        for (auto key : {SDLK_W, SDLK_UP})
-            mapKey(key, Button::Up);
-        for (auto key : {SDLK_S, SDLK_DOWN})
-            mapKey(key, Button::Down);
-        for (auto key : {SDLK_A, SDLK_LEFT})
-            mapKey(key, Button::Left);
-        for (auto key : {SDLK_D, SDLK_RIGHT})
-            mapKey(key, Button::Right);
-        mapKey(SDLK_K, Button::B);
-        mapKey(SDLK_J, Button::A);
-        mapKey(SDLK_I, Button::TurboB);
-        mapKey(SDLK_U, Button::TurboA);
-        mapKey(SDLK_BACKSPACE, Button::Select);
-        mapKey(SDLK_RETURN, Button::Start);
+        setKeyboardMapping(R2Keyboard::defaults());
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_UP, Button::Up);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::Down);
         mapGamepad(SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::Left);
@@ -123,6 +110,20 @@ namespace R2SEGA8::Systems
             throw std::out_of_range("Invalid input player.");
         pressedKeys_.erase(key);
         keyMap_.insert_or_assign(key, Binding{button, player});
+    }
+
+    void Input::setKeyboardMapping(const R2Keyboard::Mapping &mapping)
+    {
+        clear();
+        keyMap_.clear();
+        using Common::Button;
+        // A ordem acompanha as funções persistidas e apresentadas no editor.
+        constexpr Button buttons[] = {Button::Up, Button::Down, Button::Left, Button::Right,
+                                      Button::A, Button::B, Button::TurboA, Button::TurboB, Button::Start, Button::Select};
+        for (unsigned p = 0; p < 2; ++p)
+            for (int b = 0; b < 10; ++b)
+                if (mapping[p][b])
+                    mapKey(mapping[p][b], buttons[b], p);
     }
 
     void Input::mapGamepad(SDL_GamepadButton physical, Common::Button button)

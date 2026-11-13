@@ -1,5 +1,6 @@
 #pragma once
 #include "Common/Buttons.h"
+#include "KeyboardMapping.h"
 #include "Common/ExecutionSettings.h"
 #include <SDL3/SDL.h>
 #include <map>
@@ -12,7 +13,7 @@ namespace R2SEGA8::Systems
     class Input
     {
     public:
-        // Define WASD/setas, J/K/I/U, Select/Start e as posições padrão dos botões do gamepad.
+        // Define WASD, J/K/I/U, Select/Start e as posições padrão dos botões do gamepad.
         Input();
 
         // Libera gamepads e a referência ao subsistema SDL; shutdown deve preceder SDL_Quit da janela.
@@ -47,6 +48,9 @@ namespace R2SEGA8::Systems
 
         // Associa uma tecla a um botão/jogador e descarta sua pressão anterior.
         void mapKey(SDL_Keycode key, Common::Button button, unsigned player = 0);
+
+        // Substitui as teclas dos dois jogadores e libera as pressões memorizadas.
+        void setKeyboardMapping(const R2Keyboard::Mapping &mapping);
 
         // Associa uma posição de botão físico, usando a mesma configuração nos dois gamepads.
         void mapGamepad(SDL_GamepadButton physical, Common::Button button);

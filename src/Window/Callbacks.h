@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/AudioSettings.h"
+#include "Systems/KeyboardMapping.h"
 #include "Core/CPU/Z80/Z80.h"
 #include "Common/ExecutionSettings.h"
 #include "Common/SystemType.h"
@@ -103,6 +104,9 @@ namespace R2SEGA8::Window
 
         // Publica as escolhas dos menus Display e Hacks; a aplicação define o ritmo de execução.
         std::function<void(const Common::ExecutionSettings &)> setExecutionSettings;
+
+        // Aplica à entrada o mapeamento carregado ou confirmado no diálogo.
+        std::function<void(const R2Keyboard::Mapping &)> setKeyboardMapping;
 
         // Encaminha eventos do host e informa se a interface permite entrada de jogo neste instante.
         std::function<void(const SDL_Event &, bool)> inputEvent;

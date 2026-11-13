@@ -4,6 +4,8 @@
 #include "VideoLayout.h"
 #include "VideoPresenter.h"
 #include "FileManager.h"
+#include "KeyboardDialog.h"
+#include "KeyboardConfig.h"
 #include "DebugWindow.h"
 #include "NtscShaderPipeline.h"
 #include <SDL3/SDL.h>
@@ -36,6 +38,8 @@ namespace R2SEGA8::Window
     {
         Callbacks callbacks;
         FileManager files;
+        KeyboardConfig keyboardConfig;
+        R2Keyboard::KeyboardDialog keyboardDialog;
         std::unique_ptr<DebugWindow> debugger;
         SDL_Window *window = nullptr;
         SDL_Renderer *renderer = nullptr;
@@ -137,7 +141,7 @@ namespace R2SEGA8::Window
         // Consulta somente estado da interface; não conhece mapeamentos ou periféricos emulados.
         bool acceptsPointer() const
         {
-            if (!contextReady || !running || !focused || minimized || files.isOpen())
+            if (!contextReady || !running || !focused || minimized || files.isOpen() || keyboardDialog.active())
                 return false;
             if (fullscreen != Fullscreen::None)
                 return true;
@@ -155,7 +159,7 @@ namespace R2SEGA8::Window
         // Publica pausa de menus e disponibilidade de entrada também nos quadros sem eventos SDL.
         void notifyInput()
         {
-            const bool menuPaused = fullscreen == Fullscreen::None && (files.isOpen() ||
+            const bool menuPaused = fullscreen == Fullscreen::None && (files.isOpen() || keyboardDialog.active() ||
                                                                        (contextReady && ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)));
             if (menuPaused != reportedMenuPause)
             {
@@ -292,6 +296,9 @@ namespace R2SEGA8::Window
         ImGui::CreateContext();
         state.contextReady = true;
         auto &io = ImGui::GetIO();
+        state.keyboardDialog.setMapping(state.keyboardConfig.load());
+        if (state.callbacks.setKeyboardMapping)
+            state.callbacks.setKeyboardMapping(state.keyboardDialog.mapping());
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         // Navegação ociosa não captura as setas do jogo; popups e campos ativos continuam bloqueando entrada.
         io.ConfigNavCaptureKeyboard = false;
@@ -349,6 +356,9 @@ namespace R2SEGA8::Window
         while (SDL_PollEvent(&event))
         {
             if (state.debugger && state.debugger->processEvent(event))
+                continue;
+            // A captura do diálogo tem prioridade sobre os atalhos e a entrada de jogo.
+            if (state.keyboardDialog.processEvent(event, SDL_GetWindowID(state.window)))
                 continue;
             ImGui_ImplSDL3_ProcessEvent(&event);
             const auto ownID = SDL_GetWindowID(state.window);
@@ -561,6 +571,16 @@ namespace R2SEGA8::Window
                         settings.invert12Enabled = false;
                         state.callbacks.setExecutionSettings(settings);
                     }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Configure Keyboard..."))
+                    {
+                        std::array<int, 10> order{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+                        if (settings.invertT1112Enabled)
+                            order = {0, 1, 2, 3, 6, 4, 7, 5, 8, 9};
+                        else if (settings.invert12Enabled)
+                            order = {0, 1, 2, 3, 5, 4, 6, 7, 8, 9};
+                        state.keyboardDialog.open(order);
+                    }
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("Debug"))
@@ -618,7 +638,14 @@ namespace R2SEGA8::Window
                                           state.displayWidth(), state.fullscreen, state.shader, state.callbacks, state.acceptsPointer());
             // Consome as consultas antes das ações, que podem invalidar os bytes apresentados.
             if (!fullscreen)
+            {
                 state.files.draw();
+                state.keyboardDialog.draw([&](const R2Keyboard::Mapping &mapping)
+                                          {
+                    if (!state.keyboardConfig.save(mapping)) return false;
+                    if (state.callbacks.setKeyboardMapping) state.callbacks.setKeyboardMapping(mapping);
+                    return true; });
+            }
         }
         ImGui::End();
         ImGui::Render();

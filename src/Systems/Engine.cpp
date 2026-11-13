@@ -301,6 +301,9 @@ int R2SEGA8::Systems::Engine::run()
                 return {160, 144};
             return {256, 192};
         };
+        // A Engine conecta o mapeamento confirmado à entrada do sistema emulado.
+        callbacks.setKeyboardMapping = [&](const R2Keyboard::Mapping &mapping)
+        { input.setKeyboardMapping(mapping); };
         callbacks.inputEvent = [&](const SDL_Event &event, bool enabled)
         { input.handleEvent(event, enabled); };
         callbacks.lightPhaser = [&](int x, int y, bool trigger)
