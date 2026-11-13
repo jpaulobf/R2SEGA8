@@ -6,8 +6,9 @@
 Start, sem SDL. `ButtonMask` usa bits ativos em 1 e `InputState` contém os dois
 jogadores. A/B representam os botões 1/2 neste perfil do SG-1000.
 
-`Systems::Input` adapta teclado e SDL Gamepad por `std::map`, combinando as
-fontes por OR. `mapKey(tecla, botão, jogador)` permite reatribuir teclas;
+`Systems::Input` adapta teclado e SDL Gamepad por `std::map`. O menu
+Input > Player Controller escolhe Keyboard ou Joystick para cada jogador;
+os dois começam com Keyboard e a escolha vale durante a sessão. `mapKey(tecla, botão, jogador)` permite reatribuir teclas;
 `mapGamepad(posição, botão)` configura as posições físicas dos dois gamepads.
 Uma nova associação de teclado também remove a pressão memorizada da tecla.
 O menu Input > Configure Keyboard permite editar os dois controles; Save persiste as teclas em `resources/keyboard.ini`.
@@ -61,7 +62,7 @@ e TAB são liberados; o atalho de pausa permanece disponível.
 
 O analógico usa zona morta de 16000 em cada eixo: os limites exatos são
 neutros e valores além deles ativam uma direção. Não há filtro de direções
-opostas: fontes simultâneas mantêm as respectivas linhas pressionadas.
+opostas: direções simultâneas mantêm as respectivas linhas pressionadas.
 Teclas com Ctrl/Alt/GUI e eventos de repetição não iniciam novas pressões.
 Solturas são tratadas mesmo quando a entrada está bloqueada.
 
@@ -69,9 +70,10 @@ Solturas são tratadas mesmo quando a entrada está bloqueada.
 
 Input enumera gamepads já conectados e processa eventos de adição, remoção e
 remapeamento, inclusive enquanto a interface captura os comandos. Os dois
-primeiros dispositivos reconhecidos pela SDL ocupam P1/P2. A remoção de P1
-não desloca P2: a vaga livre recebe o próximo dispositivo conectado, inclusive
-um terceiro controle que estava aguardando. Eventos duplicados não abrem duas
+primeiros dispositivos reconhecidos pela SDL são atribuídos, em ordem, aos
+jogadores que escolheram Joystick. Se apenas um jogador escolher Joystick, ele
+recebe o primeiro dispositivo. Ao remover um controle, os restantes avançam
+nessa ordem, inclusive um terceiro controle que estava aguardando. Eventos duplicados não abrem duas
 referências para o mesmo dispositivo.
 
 O reconhecimento de Xbox/8BitDo depende dos drivers e mapeamentos incluídos
