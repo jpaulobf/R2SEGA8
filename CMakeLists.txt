@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(R2SEGA8 VERSION 0.4.0 LANGUAGES C CXX)
+project(R2SEGA8 VERSION 0.5.6 LANGUAGES C CXX)
 
 if(MSVC)
     add_compile_options(/utf-8)
