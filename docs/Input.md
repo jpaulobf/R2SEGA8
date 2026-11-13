@@ -10,7 +10,7 @@ jogadores. A/B representam os botões 1/2 neste perfil do SG-1000.
 fontes por OR. `mapKey(tecla, botão, jogador)` permite reatribuir teclas;
 `mapGamepad(posição, botão)` configura as posições físicas dos dois gamepads.
 Uma nova associação de teclado também remove a pressão memorizada da tecla.
-A edição por menu e a persistência dos mapeamentos ficam para uma etapa futura.
+O menu Input > Configure Keyboard permite editar os dois controles; Save persiste as teclas em `resources/keyboard.ini`.
 
 Window encaminha eventos SDL e a disponibilidade de entrada pelos callbacks
 `inputEvent` e `inputAvailability`. Ela continua sem conhecer Core, Board ou
@@ -22,16 +22,16 @@ por jogador ao `Core::IO::Joypad`, que não depende de SDL.
 
 | Função | Teclado P1 | Posição SDL do gamepad / layout Xbox |
 | --- | --- | --- |
-| Direções | WASD ou setas | D-pad ou analógico esquerdo |
-| A / botão 1 | K | East / B |
-| B / botão 2 | J | South / A |
-| Turbo A | I | North / Y |
-| Turbo B | U | West / X |
+| Direções | WASD | D-pad ou analógico esquerdo |
+| A / botão 1 | J | South / A |
+| B / botão 2 | K | East / B |
+| Turbo A / botão 1 | U | West / X |
+| Turbo B / botão 2 | I | North / Y |
 | Start → Pause/Hold do console | Enter | Start |
 | Select, sem efeito neste SG-1000 | Backspace | Back/View |
 
 As letras impressas variam entre controles; a associação usa a posição lógica da SDL.
-O teclado é atribuído a P1 por padrão, mas a API permite teclas para P2.
+P2 usa setas, Z/X, C/V (turbo), 1 (Start) e 2 (Select) por padrão. O menu permite alterar as teclas dos dois jogadores.
 
 No Game Gear, essas mesmas associações controlam o portátil: Enter ou Start
 do gamepad aciona o botão Start, e Select não tem função. Apenas o controle de
