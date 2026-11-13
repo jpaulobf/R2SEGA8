@@ -95,10 +95,11 @@ namespace
     void keyboard()
     {
         Input input;
-        key(input, SDLK_W, true);
         key(input, SDLK_UP, true);
+        check(input.update()[0] == 0 && input.update()[1] == mask(Button::Up), "Arrow keys control player two by default");
+        key(input, SDLK_W, true);
+        check(input.update()[0] == mask(Button::Up), "W is mapped to Up by default");
         key(input, SDLK_W, false);
-        check(input.update()[0] == mask(Button::Up), "Releasing one key must preserve another held source");
         key(input, SDLK_UP, false);
         key(input, SDLK_J, true);
         check(input.update()[0] == mask(Button::A), "Default keyboard A mapping");
@@ -110,6 +111,20 @@ namespace
         key(input, SDLK_J, true, true, SDL_KMOD_CTRL);
         key(input, SDLK_W, true, true, 0, true);
         check(input.update()[0] == 0, "Modified shortcuts and key repeats must not start gameplay presses");
+        auto mapping = R2Keyboard::defaults();
+        mapping[1].fill(0);
+        mapping[0][0] = SDLK_UP;
+        mapping[1][4] = SDLK_F;
+        mapping[1][7] = SDLK_G;
+        input.setKeyboardMapping(mapping);
+        key(input, SDLK_W, true);
+        key(input, SDLK_UP, true);
+        key(input, SDLK_F, true);
+        key(input, SDLK_G, true);
+        check(input.update()[0] == mask(Button::Up) &&
+                  input.update()[1] == (mask(Button::A) | mask(Button::TurboB)),
+              "Configured keys apply independently to both players, including turbo");
+        input.clear();
         input.mapKey(SDLK_F, Button::A, 1);
         key(input, SDLK_F, true);
         check(input.update()[1] == mask(Button::A), "Keyboard mapping for player two");
