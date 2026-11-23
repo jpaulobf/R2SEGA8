@@ -63,7 +63,7 @@ namespace
             std::puts("SG-1000: Z80 and TMS9918 video enabled (Graphics I/II, Text, Multicolor and sprites). Controllers enabled. "
                       "SN76489AN audio enabled. Cartridge banking is pending.");
         else if (board.type() == Common::SystemType::MasterSystem && board.hasMemoryMap())
-            std::printf("Master System: %s Mode 4 video, PSG audio, VDP interrupts and basic controllers enabled; other mappers are pending.\n",
+            std::printf("Master System (%s) supports Mode 4, Graphics I/II, PSG audio, VDP interrupts and basic controllers. Other mappers are pending.\n",
                         board.consoleProfile() == Common::ConsoleProfile::PAL ? "PAL" : "NTSC");
         else if (board.type() == Common::SystemType::GameGear)
             std::puts("Game Gear: Z80, Sega mapper, initial VDP, controls and stereo audio enabled.");
