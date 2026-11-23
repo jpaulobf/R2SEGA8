@@ -139,6 +139,60 @@ namespace
         check((vdp->readStatus() & 0x7f) == 0x64, "Unlimited sprites must retain the hardware overflow and collision bits");
     }
 
+    void graphicsIIBackground()
+    {
+        auto vdp = std::make_unique<SegaVDP>();
+        reg(*vdp, 0, 2);
+        reg(*vdp, 1, 0x40);
+        reg(*vdp, 2, 0x0e);
+        reg(*vdp, 3, 0xff);
+        reg(*vdp, 4, 3);
+        reg(*vdp, 5, 0x7f);
+        reg(*vdp, 7, 6);
+        write(*vdp, 0x3f80, 1, {0xd0});
+        write(*vdp, 0x3800, 1, {1, 9});
+        write(*vdp, 0x3900, 1, {1});
+        write(*vdp, 0x3a00, 1, {1});
+        write(*vdp, 0x0008, 1, {0x80, 0x40});
+        write(*vdp, 0x0048, 1, {0x80});
+        write(*vdp, 0x0808, 1, {0x40});
+        write(*vdp, 0x1008, 1, {0x20});
+        write(*vdp, 0x2008, 1, {0x24, 0x36});
+        write(*vdp, 0x2048, 1, {0x94});
+        write(*vdp, 0x2808, 1, {0x90});
+        write(*vdp, 0x3008, 1, {0x5f});
+        vdp->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*vdp, 0, 0, 0, 170, 0);
+        pixel(*vdp, 1, 0, 0, 0, 85);
+        pixel(*vdp, 1, 1, 0, 255, 0); // Uma cor por linha do padrão.
+        pixel(*vdp, 8, 0, 255, 0, 0);
+        pixel(*vdp, 1, 64, 255, 0, 0);
+        pixel(*vdp, 0, 64, 85, 0, 0); // A cor zero escolhe o backdrop.
+        pixel(*vdp, 2, 128, 0, 0, 255);
+
+        reg(*vdp, 3, 0xfe); // Mascara A6 das cores, mas não dos padrões.
+        reg(*vdp, 4, 1);    // Mascara A12 dos padrões, mas não das cores.
+        vdp->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*vdp, 8, 0, 0, 170, 0);
+        pixel(*vdp, 1, 64, 255, 0, 0);
+        pixel(*vdp, 0, 128, 0, 0, 255);
+        pixel(*vdp, 2, 128, 255, 255, 255);
+
+        auto gg = std::make_unique<SegaVDP>(SegaVDP::Model::GameGear);
+        reg(*gg, 0, 2);
+        reg(*gg, 1, 0x40);
+        reg(*gg, 2, 0x0e);
+        reg(*gg, 3, 0x80);
+        reg(*gg, 5, 0x7f);
+        write(*gg, 0x3f80, 1, {0xd0});
+        write(*gg, 0x3800 + 11 * 32 + 6, 1, {9}); // Pixel (48,88) na segunda faixa.
+        write(*gg, 0x0848, 1, {0x80});
+        write(*gg, 0x2848, 1, {0x20});
+        write(*gg, 0x24, 3, {0xf0, 0});
+        gg->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*gg, 0, 64, 0, 255, 0); // O portátil conserva os bits de endereço mascaráveis no SMS1.
+    }
+
     void rasterAndBackground()
     {
         auto instance = std::make_unique<SegaVDP>();
@@ -770,6 +824,7 @@ int main()
         }
         graphicsIBackground();
         graphicsISprites();
+        graphicsIIBackground();
         rasterAndBackground();
         scrolling();
         fineScrollEdge();
