@@ -6,7 +6,7 @@
 
 namespace R2SEGA8::Core
 {
-    // Raster de 192 linhas com Graphics I e Mode 4 nos perfis Master System e Game Gear.
+    // Raster de 192 linhas com Graphics I/II e Mode 4 nos perfis Master System e Game Gear.
     class SegaVDP
     {
     public:
@@ -186,8 +186,8 @@ namespace R2SEGA8::Core
         bool renderTiles_ = true, renderSprites_ = true, spriteUnlimited_ = true;
         // Avança o endereço de VRAM ou CRAM respeitando o espaço de 14 bits.
         void incrementAddress();
-        bool graphicsI() const;
-        unsigned graphicsIColor(unsigned x, unsigned y) const;
+        bool legacyGraphics() const;
+        unsigned legacyBackgroundColor(unsigned x, unsigned y) const;
         // Compõe o pixel atual de fundo, sprites e paleta.
         void drawPixel();
         // Atualiza a colisão com o atraso de processamento em relação ao pixel desenhado.
@@ -196,7 +196,7 @@ namespace R2SEGA8::Core
         void selectSprites(unsigned line);
         // Prepara os dados dos sprites selecionados para o desenho da linha.
         void prepareSprites();
-        void prepareGraphicsISprites();
+        void prepareLegacySprites();
         // Compõe os pixels e a sobreposição dos sprites já buscados para a linha atual.
         void prepareSpritePixels();
     };

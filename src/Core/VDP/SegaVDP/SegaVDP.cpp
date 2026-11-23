@@ -6,10 +6,10 @@ namespace R2SEGA8::Core
     namespace
     {
         // Equivalentes na CRAM da paleta fixa medida no VDP 315-5124.
-        constexpr std::array<std::uint8_t, 16> smsGraphicsIPalette = {
+        constexpr std::array<std::uint8_t, 16> smsLegacyPalette = {
             0x00, 0x00, 0x08, 0x0c, 0x10, 0x30, 0x01, 0x3c,
             0x02, 0x03, 0x05, 0x0f, 0x04, 0x33, 0x15, 0x3f};
-        constexpr unsigned graphicsISpriteLimit = 4;
+        constexpr unsigned legacySpriteLimit = 4;
     }
 
     void SegaVDP::snapshot(Snapshot &s) const
@@ -58,17 +58,33 @@ namespace R2SEGA8::Core
         prepareSpritePixels();
     }
 
-    bool SegaVDP::graphicsI() const
+    bool SegaVDP::legacyGraphics() const
     {
-        return !(state_.registers[0] & 0x06) && !(state_.registers[1] & 0x18);
+        return !(state_.registers[0] & 0x04) && !(state_.registers[1] & 0x18);
     }
 
-    unsigned SegaVDP::graphicsIColor(unsigned x, unsigned y) const
+    unsigned SegaVDP::legacyBackgroundColor(unsigned x, unsigned y) const
     {
         const auto &r = state_.registers;
         const unsigned name = state_.vram[((r[2] & 15) << 10) + (y / 8) * 32 + x / 8];
-        const auto pattern = state_.vram[((r[4] & 7) << 11) + name * 8 + (y & 7)];
-        const auto colors = state_.vram[(r[3] << 6) + name / 8];
+        unsigned patternAddress, colorAddress;
+        if (r[0] & 0x02)
+        {
+            // Graphics II usa um banco para cada faixa de 64 linhas e uma cor por linha do padrão.
+            const unsigned offset = ((y & 0xc0) << 5) | (name << 3) | (y & 7);
+            const bool sms = model_ == Model::MasterSystem;
+            const unsigned patternMask = sms ? ((r[4] & 3) << 11) | 0x07ff : 0x1fff;
+            const unsigned colorMask = sms ? ((r[3] & 0x7f) << 6) | 0x003f : 0x1fff;
+            patternAddress = ((r[4] & 4) << 11) | (offset & patternMask);
+            colorAddress = ((r[3] & 0x80) << 6) | (offset & colorMask);
+        }
+        else
+        {
+            patternAddress = ((r[4] & 7) << 11) + name * 8 + (y & 7);
+            colorAddress = (r[3] << 6) + name / 8;
+        }
+        const auto pattern = state_.vram[patternAddress];
+        const auto colors = state_.vram[colorAddress];
         return pattern & (0x80 >> (x & 7)) ? colors >> 4 : colors & 15;
     }
 
@@ -77,7 +93,7 @@ namespace R2SEGA8::Core
         selectedSpriteCount_ = 0;
         selectedSpriteOverflow_ = false;
         spriteSelectionValid_ = true;
-        const bool legacy = graphicsI();
+        const bool legacy = legacyGraphics();
         // A seleção continua com a tela apagada: o overflow independe de BLK.
         if (line >= Height || (!legacy && !(state_.registers[0] & 0x04)))
             return;
@@ -85,7 +101,7 @@ namespace R2SEGA8::Core
         const unsigned height = (state_.registers[1] & 2) ? 16 : 8;
         const unsigned scale = (state_.registers[1] & 1) ? 2 : 1;
         const unsigned entries = legacy ? 32 : 64;
-        const unsigned limit = legacy ? graphicsISpriteLimit : 8;
+        const unsigned limit = legacy ? legacySpriteLimit : 8;
         for (unsigned index = 0; index < entries; ++index)
         {
             const auto y = state_.vram[base + index * (legacy ? 4 : 1)];
@@ -112,9 +128,9 @@ namespace R2SEGA8::Core
     void SegaVDP::prepareSprites()
     {
         spriteCount_ = hardwareSpriteCount_ = 0;
-        if (graphicsI())
+        if (legacyGraphics())
         {
-            prepareGraphicsISprites();
+            prepareLegacySprites();
             prepareSpritePixels();
             return;
         }
@@ -150,7 +166,7 @@ namespace R2SEGA8::Core
         prepareSpritePixels();
     }
 
-    void SegaVDP::prepareGraphicsISprites()
+    void SegaVDP::prepareLegacySprites()
     {
         const auto &r = state_.registers;
         const unsigned attributes = (r[5] & 0x7f) << 7;
@@ -178,7 +194,7 @@ namespace R2SEGA8::Core
                 sprite.doubleWidth = scale == 2;
                 for (unsigned plane = 0; plane < 4; ++plane)
                     sprite.planes[plane] = color & (1u << plane) ? pattern : 0;
-                if (i < graphicsISpriteLimit)
+                if (i < legacySpriteLimit)
                     ++hardwareSpriteCount_;
             }
         }
@@ -214,7 +230,7 @@ namespace R2SEGA8::Core
     void SegaVDP::drawPixel()
     {
         const auto x = state_.dot, y = state_.line;
-        const bool legacy = graphicsI();
+        const bool legacy = legacyGraphics();
         const bool mode4 = (state_.registers[0] & 0x04) != 0;
         const bool display = (state_.registers[1] & 0x40) != 0;
         const bool maskedColumn = mode4 && (state_.registers[0] & 0x20) && x < 8;
@@ -223,7 +239,7 @@ namespace R2SEGA8::Core
         bool backgroundPriority = false;
         if (legacy && display && renderTiles_)
         {
-            const auto color = graphicsIColor(x, y);
+            const auto color = legacyBackgroundColor(x, y);
             if (color)
                 paletteIndex = color;
         }
@@ -272,7 +288,7 @@ namespace R2SEGA8::Core
         }
         else
         {
-            const auto color = legacy ? smsGraphicsIPalette[paletteIndex] : state_.cram[paletteIndex];
+            const auto color = legacy ? smsLegacyPalette[paletteIndex] : state_.cram[paletteIndex];
             image[offset] = (color & 3) * 85;
             image[offset + 1] = ((color >> 2) & 3) * 85;
             image[offset + 2] = ((color >> 4) & 3) * 85;
@@ -299,7 +315,7 @@ namespace R2SEGA8::Core
     void SegaVDP::detectSpriteCollision(unsigned x)
     {
         const bool mode4 = (state_.registers[0] & 0x04) != 0;
-        if (!(state_.registers[1] & 0x40) || (!mode4 && !graphicsI()) ||
+        if (!(state_.registers[1] & 0x40) || (!mode4 && !legacyGraphics()) ||
             (mode4 && (state_.registers[0] & 0x20) && x < 8))
             return;
         if (spriteOverlaps_[x] > 1)
@@ -373,8 +389,8 @@ namespace R2SEGA8::Core
             }
             if (state_.dot == HBlankEventDot - 1 && selectedSpriteOverflow_)
             {
-                if (graphicsI() && !(state_.status & 0x40))
-                    state_.status = (state_.status & 0xe0) | (selectedSprites_[graphicsISpriteLimit].index & 31);
+                if (legacyGraphics() && !(state_.status & 0x40))
+                    state_.status = (state_.status & 0xe0) | (selectedSprites_[legacySpriteLimit].index & 31);
                 state_.status |= 0x40;
             }
             if (++state_.dot == DotsPerLine)
@@ -465,9 +481,9 @@ namespace R2SEGA8::Core
         }
         else if (state_.code == 2)
         {
-            const bool wasGraphicsI = graphicsI();
+            const bool wasLegacyGraphics = legacyGraphics();
             state_.registers[value & 0x0f] = static_cast<std::uint8_t>(state_.address);
-            if (wasGraphicsI != graphicsI())
+            if (wasLegacyGraphics != legacyGraphics())
             {
                 // A seleção anterior pertence a outra organização da tabela de sprites.
                 selectedSpriteCount_ = spriteCount_ = hardwareSpriteCount_ = 0;
