@@ -23,8 +23,9 @@ namespace
                                      ("r2sega8-gg-input-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".gg");
         Fixture()
         {
-            // Lê Start e os botões, grava em RAM e para sem habilitar interrupções.
-            const std::uint8_t code[] = {0xf3, 0xdb, 0x00, 0x32, 0x00, 0xc0, 0xdb, 0xdc, 0x32, 0x01, 0xc0, 0x76};
+            // Lê Start, os botões e o contador H, grava em RAM e para com DI.
+            const std::uint8_t code[] = {0xf3, 0xdb, 0x00, 0x32, 0x00, 0xc0, 0xdb, 0xdc, 0x32, 0x01, 0xc0,
+                                         0xdb, 0x7f, 0x32, 0x02, 0xc0, 0x76};
             std::ofstream file(path, std::ios::binary);
             file.write(reinterpret_cast<const char *>(code), sizeof(code));
             file.close();
@@ -55,6 +56,13 @@ int main()
         board->runCycles(256);
         check(board->cpu().state().halted && board->readMemory(0xc000) == 0x5f && board->readMemory(0xc001) == 0xee,
               "CPU must read Start and the controller from their respective ports");
+        check(board->readMemory(0xc002) == 0, "IN A,($7F) must read the horizontal latch without an EXT accessory");
+        for (unsigned port = 0x40; port <= 0x7f; ++port)
+        {
+            const auto expected = port & 1 ? 0 : board->vdp().verticalCounter();
+            check(board->input(static_cast<std::uint16_t>(0xa500 | port)) == expected,
+                  "Game Gear counter ports must mirror by parity");
+        }
         board->setInput({});
         check(board->input(0) == 0xdf && board->input(0xdc) == 0xff, "Clearing input must release controls");
         board->setButtons(1, mask(Button::Start) | mask(Button::B));

@@ -113,6 +113,41 @@ namespace
         check(board->input(0x7f) == portB, "Port B TH must also latch the counter");
     }
 
+    void frameInterrupt()
+    {
+        std::vector<std::uint8_t> rom(0x100);
+        // Habilita VINT em R1 e aguarda em HALT com IM 1.
+        const std::uint8_t code[] = {0x3e, 0x20, 0xd3, 0xbf, 0x3e, 0x81, 0xd3, 0xbf, 0xed, 0x56, 0xfb, 0x76};
+        // IN A,($BF); LD ($C000),A; HALT.
+        const std::uint8_t handler[] = {0xdb, 0xbf, 0x32, 0, 0xc0, 0x76};
+        std::copy(std::begin(code), std::end(code), rom.begin());
+        std::copy(std::begin(handler), std::end(handler), rom.begin() + 0x38);
+        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge("vblank.sms", std::move(rom), "vblank.sms"));
+
+        constexpr auto vblankLine = Core::SegaVDP::Height * Core::SegaVDP::DotsPerLine * 2;
+        constexpr auto statusCycle = (vblankLine + 318 * 2) / 3;
+        board->runCycles(statusCycle - 1);
+        check(board->cpu().state().halted && !board->cpu().state().irq && !(board->input(0xbf) & 0x80),
+              "The status port must return VBlank clear before the latch");
+        board->runCycles(1);
+        check(board->cpu().state().halted && !board->cpu().state().irq && (board->vdp().state().status & 0x80),
+              "VBlank status must be readable one CPU cycle before INT");
+        const auto saved = board->saveState();
+
+        board->runCycles(1);
+        check(board->cpu().state().irq, "Unread VBlank must assert INT");
+        board->runCycles(64);
+        check(board->readMemory(0xc000) == 0x80 && !board->cpu().state().irq,
+              "The Z80 must leave HALT, read the VBlank flag and acknowledge INT");
+
+        board->loadState(saved);
+        check(board->input(0xbf) == 0x80, "A status read in the gap must acknowledge VBlank");
+        board->runCycles(64);
+        check(board->cpu().state().halted && board->cpu().state().pc == sizeof code &&
+                  !board->cpu().state().irq && board->readMemory(0xc000) == 0,
+              "Acknowledging VBlank before INT must leave the Z80 in its original HALT");
+    }
+
     void lightPhaser(const std::filesystem::path &path)
     {
         auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
@@ -120,6 +155,8 @@ namespace
         board->setLightPhaser(true, 80, 20, true);
         check((board->input(0xdc) & 0x3f) == 0x2f, "Phaser replaces port A with active-low trigger");
         check((board->input(0xdd) & 0x40) != 0, "Sensor starts dark");
+        board->output(0xbf, 0x04);
+        board->output(0xbf, 0x80); // A cena de teste usa o backdrop da CRAM do Mode 4.
         board->output(0xbf, 0x10);
         board->output(0xbf, 0xc0);
         board->output(0xbe, 0x3f); // Bright backdrop.
@@ -216,6 +253,44 @@ namespace
               "Games must still be able to program SMS1 pattern masks");
     }
 
+    void graphicsI()
+    {
+        std::vector<std::uint8_t> rom{0xf3}; // DI.
+        const auto output = [&](std::uint8_t port, std::uint8_t value)
+        {
+            rom.insert(rom.end(), {0x3e, value, 0xd3, port}); // LD A,n; OUT (port),A.
+        };
+        const auto reg = [&](unsigned index, std::uint8_t value)
+        {
+            output(0xbf, value);
+            output(0xbf, 0x80 | index);
+        };
+        const auto write = [&](unsigned address, std::initializer_list<std::uint8_t> bytes)
+        {
+            output(0xbf, address & 0xff);
+            output(0xbf, 0x40 | (address >> 8));
+            for (auto byte : bytes)
+                output(0xbe, byte);
+        };
+        reg(0, 0);
+        reg(2, 0x0e);
+        reg(3, 0x80);
+        reg(4, 1);
+        reg(5, 0x7f);
+        write(0x3800, {8});
+        write(0x0840, {0x80});
+        write(0x2001, {0x24});
+        write(0x3f80, {0xd0});
+        reg(1, 0x40);
+        rom.push_back(0x76); // HALT.
+        auto board = std::make_unique<Core::MasterSystem>(Core::Cartridge("graphics-i.sms", std::move(rom), "graphics-i.sms"));
+        board->runCycles(2 * board->cyclesPerFrame());
+        const auto *pixel = board->videoFrame().rgba;
+        check(board->cpu().state().halted && pixel[0] == 0 && pixel[1] == 170 && pixel[2] == 0 &&
+                  pixel[4] == 0 && pixel[5] == 0 && pixel[6] == 85,
+              "A Z80 ROM must render Graphics I through the SMS VDP ports");
+    }
+
     void turbo(const std::filesystem::path &path)
     {
         auto board = std::make_unique<Core::MasterSystem>(::R2SEGA8::Tests::loadCartridge(path));
@@ -242,9 +317,11 @@ int main()
         Fixture fixture;
         controls(fixture.path);
         horizontalLatch(fixture.path);
+        frameInterrupt();
         lightPhaser(fixture.path);
         audio(fixture.path);
         videoStartup(fixture.path);
+        graphicsI();
         turbo(fixture.path);
         std::cout << "Master System controller ports, CPU, Pause NMI and turbo passed.\n";
         return 0;

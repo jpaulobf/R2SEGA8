@@ -48,7 +48,95 @@ namespace
         if (p[0] != r || p[1] != g || p[2] != b || p[3] != 255)
             std::cerr << "Pixel (" << x << "," << y << "): got " << unsigned(p[0]) << "," << unsigned(p[1])
                       << "," << unsigned(p[2]) << "; expected " << r << "," << g << "," << b << '\n';
-        check(p[0] == r && p[1] == g && p[2] == b && p[3] == 255, "Mode 4 pixel mismatch");
+        check(p[0] == r && p[1] == g && p[2] == b && p[3] == 255, "VDP pixel mismatch");
+    }
+
+    void graphicsIBackground()
+    {
+        auto sms = std::make_unique<SegaVDP>();
+        reg(*sms, 0, 0x28); // Os bits de máscara da coluna e deslocamento de sprites são do Mode 4.
+        reg(*sms, 1, 0x40);
+        reg(*sms, 2, 0x0f);
+        reg(*sms, 3, 0x40);
+        reg(*sms, 4, 1);
+        reg(*sms, 5, 0x7f);
+        reg(*sms, 7, 6);
+        reg(*sms, 8, 7);
+        reg(*sms, 9, 8);
+        write(*sms, 0x3f80, 1, {0xd0});
+        write(*sms, 0x3c00, 1, {8, 15, 16});
+        write(*sms, 0x0840, 1, {0x81, 0x40});
+        write(*sms, 0x0878, 1, {0x80});
+        write(*sms, 0x0880, 1, {0x80});
+        write(*sms, 0x1001, 1, {0x24, 0x90});
+        write(*sms, 2, 3, {0x3f}); // Graphics I do SMS usa a paleta fixa.
+        write(*sms, 0x16, 3, {0x0c});
+        sms->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*sms, 0, 0, 0, 170, 0);
+        pixel(*sms, 1, 0, 0, 0, 85);
+        pixel(*sms, 7, 0, 0, 170, 0);
+        pixel(*sms, 8, 0, 0, 170, 0); // O grupo de cores abrange os padrões 8 a 15.
+        pixel(*sms, 16, 0, 255, 0, 0);
+        pixel(*sms, 17, 0, 85, 0, 0); // Cor zero revela R7.
+        pixel(*sms, 1, 1, 0, 170, 0);
+        reg(*sms, 0, 4);
+        reg(*sms, 1, 0);
+        sms->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*sms, 17, 0, 0, 255, 0); // O backdrop do Mode 4 usa a CRAM escrita em Graphics I.
+
+        auto gg = std::make_unique<SegaVDP>(SegaVDP::Model::GameGear);
+        reg(*gg, 1, 0x40);
+        reg(*gg, 3, 0x40);
+        reg(*gg, 4, 1);
+        reg(*gg, 5, 0x7f);
+        reg(*gg, 7, 1);
+        write(*gg, 0x3f80, 1, {0xd0});
+        write(*gg, 3 * 32 + 6, 1, {8}); // Primeira célula da janela LCD (48,24).
+        write(*gg, 0x0840, 1, {0x80});
+        write(*gg, 0x1001, 1, {0x20});
+        write(*gg, 0x04, 3, {0x0f, 0});
+        write(*gg, 0x22, 3, {0, 0x0f, 0xf0, 0});
+        gg->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*gg, 0, 0, 0, 255, 0); // A cor 2 vem do segundo banco da CRAM.
+        pixel(*gg, 1, 0, 0, 0, 255);
+    }
+
+    void graphicsISprites()
+    {
+        auto vdp = std::make_unique<SegaVDP>();
+        vdp->setSpriteUnlimited(false);
+        reg(*vdp, 1, 0x43);
+        reg(*vdp, 5, 0x77);
+        reg(*vdp, 6, 4);
+        write(*vdp, 0x2000, 1, {0x80});
+        write(*vdp, 0x2008, 1, {0x40});
+        write(*vdp, 0x2010, 1, {0x80});
+        write(*vdp, 0x2018, 1, {0x20});
+        write(*vdp, 0x3b80, 1, {0xff, 48, 3, 0x89, 0xff, 16, 3, 4, 0xff, 64, 3, 0, 0xff, 80, 3, 4, 0xff, 128, 3, 3, 0xd0, 0, 0, 0, 0xff, 200, 3, 9});
+        constexpr auto activeTicks = SegaVDP::Height * SegaVDP::DotsPerLine * 2;
+        vdp->runMasterTicks(2);
+        auto saved = std::make_unique<SegaVDP::Snapshot>();
+        vdp->snapshot(*saved);
+        vdp->runMasterTicks(activeTicks - 2);
+        pixel(*vdp, 16, 0, 255, 0, 0); // Early clock, prioridade pelo índice e zoom horizontal.
+        pixel(*vdp, 17, 0, 255, 0, 0);
+        pixel(*vdp, 32, 0, 255, 0, 0); // Metade direita usa o terceiro padrão do grupo.
+        pixel(*vdp, 16, 1, 255, 0, 0); // Zoom vertical.
+        pixel(*vdp, 18, 16, 255, 0, 0);
+        pixel(*vdp, 36, 16, 255, 0, 0); // Quadrante inferior direito.
+        pixel(*vdp, 64, 0, 0, 0, 0);
+        pixel(*vdp, 80, 0, 0, 0, 85);
+        pixel(*vdp, 128, 0, 0, 0, 0);
+        check(vdp->readStatus() == 0x64, "Graphics I must report collision and the fifth sprite index");
+        vdp->restore(*saved);
+        vdp->runMasterTicks(activeTicks - 2);
+        pixel(*vdp, 32, 0, 255, 0, 0);
+        check(vdp->readStatus() == 0x64, "Graphics I sprite rows and status must survive snapshot restore");
+        vdp->setSpriteUnlimited(true);
+        vdp->runMasterTicks(SegaVDP::MasterTicksPerFrame);
+        pixel(*vdp, 128, 0, 0, 255, 0);
+        pixel(*vdp, 200, 0, 0, 0, 0); // O terminador D0 vale mesmo sem limite visual.
+        check((vdp->readStatus() & 0x7f) == 0x64, "Unlimited sprites must retain the hardware overflow and collision bits");
     }
 
     void rasterAndBackground()
@@ -77,14 +165,15 @@ namespace
         vdp.runMasterTicks(316 * 2);
         check(!(vdp.state().status & 0x80) && !vdp.interrupt(), "VBlank must not latch on line C0");
         vdp.runMasterTicks(2);
-        check(vdp.state().frameInterruptPending && !(vdp.state().status & 0x80) && !vdp.interrupt(),
-              "Frame interrupt must become pending before its status flag");
-        reg(vdp, 1, 0x60);
-        check(vdp.interrupt(), "Enabling pending frame IRQ must assert IRQ");
         check(vdp.verticalCounter() == 0xc1 && !(vdp.state().status & 0x80),
               "V counter changes before the VBlank status flag");
         vdp.runMasterTicks(2);
-        check((vdp.state().status & 0x80) && vdp.interrupt(), "VBlank flag must latch on line C1");
+        check((vdp.state().status & 0x80) && !vdp.state().frameInterruptPending,
+              "VBlank flag must latch on line C1 before the INT phase");
+        vdp.runMasterTicks(2);
+        check(vdp.state().frameInterruptPending && !vdp.interrupt(), "Frame IRQ remains masked until enabled");
+        reg(vdp, 1, 0x60);
+        check(vdp.interrupt(), "Enabling pending frame IRQ must assert IRQ");
         check((vdp.readStatus() & 0x80) && !vdp.interrupt(), "Status read must acknowledge IRQ");
         vdp.setRenderTiles(false);
         vdp.runMasterTicks(SegaVDP::MasterTicksPerFrame);
@@ -679,6 +768,8 @@ int main()
             pixel(*gg, 0, 0, 255, 0, 0);
             pixel(*gg, 1, 0, 0, 0, 255);
         }
+        graphicsIBackground();
+        graphicsISprites();
         rasterAndBackground();
         scrolling();
         fineScrollEdge();
