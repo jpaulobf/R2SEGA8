@@ -46,7 +46,8 @@ Maximizing is allowed; manual resizing is blocked.
 **Display > Console Profile** selects Auto, NTSC or PAL for Master System. Auto
 uses PAL for ROM filenames tagged Europe or Australia and NTSC otherwise.
 Changing the profile restarts the loaded Master System game. PAL runs at about
-49.70 Hz. **Display > VSync** synchronizes presentation with the monitor; it starts enabled.
+49.70 Hz. **Display > VSync** is enabled by default and synchronizes presentation
+with the monitor. Emulation runs at the console's native rate in either mode.
 Hold **Tab** for silent fast-forward. **Hacks > Enable Fast-Forward** starts enabled.
 The title shows emulated FPS before the ROM filename.
 
