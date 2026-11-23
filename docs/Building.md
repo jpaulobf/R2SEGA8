@@ -117,6 +117,15 @@ dots entre o pixel processado e o latch da colisão; a posição visual é manti
 Essa aproximação ainda não modela uma fila de pixels nem alterações de
 registradores durante esse intervalo e não foi validada no Game Gear.
 
+Após ajustar o VBlank do Master System, a ROM registra **54 aprovados e
+1 falha**. O teste 32 lê `$82` e `$84` depois das duas IRQs e o teste 35
+passa nas leituras antes e depois de o bit de status aparecer. Na origem do
+raster do emulador, o bit é atualizado no dot 317 e a IRQ fica pendente no
+dot 318 se o bit ainda estiver ativo. Uma leitura da porta BF entre os dois
+eventos reconhece o VBlank e evita que o mesmo evento acione INT. Uma ROM
+sintética verifica os dois caminhos, inclusive ao restaurar o estado salvo
+entre o latch e a IRQ.
+
 O teste 46 espera colisão totalmente fora da área vertical ativa. O próprio
 [autor da ROM](https://github.com/FluBBaOfWard/SmsVdpTest) relata essa
 ocorrência, mas há [relatos de testes em hardware](https://www.smspower.org/forums/13407-SmsSpriteCollisionCalculation)
