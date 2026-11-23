@@ -108,8 +108,9 @@ namespace R2SEGA8::Core
         // O controle integrado ocupa as seis linhas inferiores; o conector externo não é emulado.
         if ((port & 0xc0) == 0xc0)
             return (port & 1) ? 0xff : static_cast<std::uint8_t>(controls_.joypad().readEven() | 0xc0);
-        if ((port & 0xc1) == 0x40)
-            return vdp_.verticalCounter();
+        // Sem acessório no conector EXT, o latch horizontal conserva o valor inicial.
+        if ((port & 0xc0) == 0x40)
+            return (port & 1) ? 0x00 : vdp_.verticalCounter();
         if ((port & 0xc0) != 0x80)
             return 0xff;
         const auto value = (port & 1) ? vdp_.readStatus() : vdp_.readData();
