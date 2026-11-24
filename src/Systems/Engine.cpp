@@ -385,13 +385,12 @@ int R2SEGA8::Systems::Engine::run()
                 executionSettings.vsync = false;
                 nextMode = LoopMode::Hardware;
             }
-            // Descarta PCM anterior tanto na entrada quanto na saída do avanço rápido.
+            // Ao alternar o avanço rápido, reinicia a agenda e descarta o PCM anterior.
             if (loopMode == LoopMode::FastForward || nextMode == LoopMode::FastForward)
-                resetAudio = true;
+                resetAudio = resetTiming = true;
             loopMode = nextMode;
-            resetTiming = true;
         };
-        // Consome ações dos eventos e também as emitidas pelos menus; nenhum modo herda prazos antigos.
+        // Aplica as reinicializações solicitadas por eventos e menus.
         const auto resetRuntime = [&]()
         {
             if (!resetAudio && !resetTiming)
@@ -424,16 +423,15 @@ int R2SEGA8::Systems::Engine::run()
             const auto buttons = input.update(inputEnabled && !emulationPaused, executionSettings);
             if (board && !emulationPaused && !rewinding)
                 board->setInput(buttons);
-            if (loopMode == LoopMode::Hardware)
-                pacer.advance();
             if (timedBoard() && !emulationPaused)
             {
-                // Sem limite, vários quadros por apresentação reduzem a dependência do custo do renderer.
-                // O modo nativo continua recuperando até quatro quadros; VSync apresenta cada quadro.
-                const unsigned framesPerBatch = loopMode == LoopMode::FastForward ? 8 : 4;
-                for (unsigned frame = 0; frame < framesPerBatch; ++frame)
+                // A cadência da placa vale com ou sem sincronização da apresentação.
+                const bool fast = loopMode == LoopMode::FastForward;
+                const unsigned framesPerBatch = fast ? 8 : 4;
+                const auto now = Clock::now();
+                for (unsigned frame = 0; frame < framesPerBatch && (fast || pacer.takeFrame(now)); ++frame)
                 {
-                    if (frame && loopMode == LoopMode::FastForward)
+                    if (frame && fast)
                     {
                         // Consulta TAB e ações entre quadros, sem esperar a apresentação do lote inteiro.
                         if (!window.processEvents())
@@ -505,11 +503,6 @@ int R2SEGA8::Systems::Engine::run()
                             audio.shutdown();
                         }
                     }
-                    if (loopMode == LoopMode::FastForward)
-                        continue;
-                    if (loopMode == LoopMode::VSync || frame == 3 || Clock::now() < pacer.deadline())
-                        break;
-                    pacer.advance();
                 }
             }
             if (!running)
@@ -519,13 +512,9 @@ int R2SEGA8::Systems::Engine::run()
             resetRuntime();
             if (loopMode != LoopMode::Hardware)
                 continue;
+            if (!timedBoard() || emulationPaused)
+                pacer.takeFrame(Clock::now());
             std::this_thread::sleep_until(pacer.deadline());
-            // Após uma pausa longa (arrastar janela, depurador), não executa uma fila ilimitada de quadros antigos.
-            if (Clock::now() > pacer.deadline() + std::chrono::milliseconds(250))
-            {
-                const bool timed = timedBoard();
-                pacer.reset(timed ? board->clockFrequency() : 60, timed ? board->cyclesPerFrame() : 1, Clock::now());
-            }
         }
         return 0;
     }

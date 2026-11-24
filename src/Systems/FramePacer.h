@@ -33,6 +33,17 @@ namespace R2SEGA8::Systems
             remainder_ %= frequency_;
         }
 
+        // Consome o quadro devido. Uma espera longa reinicia a agenda no instante atual.
+        bool takeFrame(Clock::time_point now)
+        {
+            if (now < deadline_)
+                return false;
+            if (now - deadline_ > std::chrono::milliseconds(250))
+                reset(frequency_, cycles_, now);
+            advance();
+            return true;
+        }
+
         // Consulta o próximo prazo sem depender de eventos ou do dispositivo de áudio.
         Clock::time_point deadline() const { return deadline_; }
 
