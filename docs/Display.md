@@ -23,12 +23,16 @@ da Engine e são consultadas/alteradas pela Window somente por callbacks.
 | Modo efetivo | Execução e apresentação |
 | --- | --- |
 | VSync desativado | Clock original da placa, com prazos racionais e sleep; SG-1000 NTSC a aproximadamente 59,922743 Hz. |
-| VSync ativado | Um quadro emulado por apresentação; a espera vertical da SDL controla o ritmo, sem sleep ou limite adicional. |
+| VSync ativado | A placa segue seu clock original. A SDL sincroniza a apresentação com o monitor, reapresentando a imagem anterior quando nenhum quadro novo estiver pronto. |
 | TAB pressionado com fast-forward permitido | Até oito quadros por apresentação, sem VSync nem sleep; PCM descartado e saída silenciada. |
 
 O lote de avanço rápido consulta eventos e entradas entre os quadros, permitindo
 soltar TAB sem esperar a apresentação seguinte. Nenhum clock da máquina é
 descartado; somente imagens intermediárias deixam de ser apresentadas.
+
+Com ou sem VSync, atrasos curtos podem exigir até quatro quadros emulados antes
+de uma apresentação. Em PAL (~49,7 Hz) numa tela de 60 Hz, alguns quadros ficam
+visíveis por duas atualizações, o que pode deixar o scroll irregular.
 
 ## FPS no título
 
@@ -46,10 +50,6 @@ no MinGW está registrada em [Performance.md](Performance.md).
 
 ## Transições entre modos
 
-O modo VSync acompanha a frequência do monitor. Nesta versão, um monitor acima
-da frequência original também acelera a emulação nesse modo; a separação entre
-cadência de emulação e apresentação fica para uma revisão futura.
-
 TAB suspende temporariamente VSync sem apagar a preferência do menu. Soltar TAB
 restaura o modo anterior. Captura pela interface, abertura de menus/diálogos,
 perda de foco, minimização, reset e troca de ROM liberam a tecla memorizada.
@@ -58,7 +58,8 @@ limpa ao entrar e sair dele; os ajustes de volume/ativação são preservados e 
 PSG continua sendo emulado. Turbo dos controles continua seguindo os quadros
 emulados, inclusive em avanço rápido.
 
-As trocas de modo reiniciam os prazos, sem recuperar tempo do modo anterior.
+Entrar ou sair do avanço rápido reinicia os prazos. Alternar apenas o VSync
+preserva a agenda da máquina.
 Minimizar usa o limitador nativo mesmo com VSync selecionado, evitando depender
 de apresentações suspensas para limitar o loop. Se a SDL rejeitar a ativação
 de VSync, a Engine registra a falha e retorna ao ritmo nativo com a opção
