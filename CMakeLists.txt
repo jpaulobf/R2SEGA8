@@ -29,7 +29,6 @@ add_library(r2sega8_core STATIC
     src/Core/Cartridge/SegaMapper.cpp
     src/Core/Board.cpp
     src/Core/Systems/SG1000/SG1000.cpp
-    src/Core/Systems/SC3000/SC3000.cpp
     src/Core/Systems/MasterSystem/MasterSystem.cpp
     src/Core/Systems/GameGear/GameGear.cpp
 )
