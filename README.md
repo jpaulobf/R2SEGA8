@@ -5,7 +5,7 @@
 </div>
 
 <br>
-A Sega SG-1000, SC-3000, Master System and Game Gear emulator written from
+A Sega SG-1000, Master System and Game Gear emulator written from
 scratch in C++, developed alongside R2NES / R2BOY.
 
 The project is in early development. SG-1000 emulation is stable for general
@@ -18,7 +18,7 @@ and stereo PSG audio; compatibility is still being improved.
 
 Use **File > Open** or **Ctrl+O**, then click a ROM to load it immediately.
 Dragging a ROM into the window also loads it directly. ZIP archives are supported:
-the first .sg, .sc, .sms or .gg entry is loaded, using its extension to select
+the first `.sg`, `.sms` or `.gg` entry is loaded, using its extension to select
 the system. Stored and DEFLATE entries are supported; ZIP64, encrypted and
 multi-disk archives are not supported. ROMs are limited to 16 MiB and ZIPs to
 128 MiB.
@@ -29,8 +29,8 @@ to stop emulation and close the cartridge. Audio preferences stay unchanged.
 Press **Pause/Break** to pause or resume. Opening a menu pauses emulation;
 closing it resumes only if you did not pause manually.
 
-The extension selects the system: `.sg`, `.sc`, `.sms` or `.gg` (case-insensitive).
-ZIP loading and automatic identification of `.bin` files will come later.
+ROM extensions are case-insensitive. Automatic identification of `.bin` files
+is pending.
 
 For SG-1000, Master System and Game Gear, use **File > Save State** (**F5**)
 and **File > Load State** (**F6**). Select one of three per-ROM slots in
