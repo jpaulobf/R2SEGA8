@@ -113,6 +113,8 @@ int main()
             sms.writeMemory(0xc000, static_cast<std::uint8_t>(slot));
             store.save(sms, slot);
         }
+        check(std::filesystem::exists(fixture.directory / "saves" / "3-af63eb4c86020609.slot1.state"),
+              "Existing Master System save state file names must remain compatible");
         for (unsigned slot = 1; slot <= 3; ++slot)
         {
             sms.loadState(store.load(sms, slot));
@@ -124,6 +126,8 @@ int main()
             gg->writeMemory(0xc000, static_cast<std::uint8_t>(slot + 10));
             store.save(*gg, slot);
         }
+        check(std::filesystem::exists(fixture.directory / "saves" / "4-af63eb4c86020609.slot1.state"),
+              "Existing Game Gear save state file names must remain compatible");
         for (unsigned slot = 1; slot <= 3; ++slot)
         {
             gg->loadState(store.load(*gg, slot));

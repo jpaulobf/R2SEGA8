@@ -793,8 +793,7 @@ int main()
             if (std::string(SDL_GetWindowTitle(nativeWindow)) != titlePrefix + " | FPS : 245.75 | 01.sg")
                 throw std::runtime_error("Updated emulated FPS must replace the title value without duplicating the filename");
             executionOptions(window, nativeWindow, executionSettings, executionChanges);
-            for (const auto system : {R2SEGA8::Common::SystemType::SG1000, R2SEGA8::Common::SystemType::SC3000,
-                                      R2SEGA8::Common::SystemType::GameGear})
+            for (const auto system : {R2SEGA8::Common::SystemType::SG1000, R2SEGA8::Common::SystemType::GameGear})
             {
                 loadedType = system;
                 const auto *main = ImGui::FindWindowByName("R2SEGA8");
@@ -875,15 +874,14 @@ int main()
             if (hasVideoTexture(16, 4))
                 throw std::runtime_error("Empty frame callback displayed a stale video image");
             frameEnabled = true;
-            const R2SEGA8::Common::SystemType systems[] = {R2SEGA8::Common::SystemType::SC3000, R2SEGA8::Common::SystemType::MasterSystem,
-                                                           R2SEGA8::Common::SystemType::GameGear};
-            for (int index = 1; index <= 3; ++index)
+            const R2SEGA8::Common::SystemType systems[] = {R2SEGA8::Common::SystemType::MasterSystem, R2SEGA8::Common::SystemType::GameGear};
+            for (int index = 1; index <= 2; ++index)
             {
                 window.requestOpen(fixture.parent_path());
                 window.render();
                 activateROMEntry(window, index);
                 if (loads != index + 1 || loadedType != systems[index - 1])
-                    throw std::runtime_error("ROM extension must select the system case-insensitively");
+                    throw std::runtime_error("The selector must skip .sc and recognize supported extensions case-insensitively");
             }
             const auto previousPath = loadedPath;
             rejectLoad = true;
@@ -893,33 +891,40 @@ int main()
             const auto failedAttempts = attempts;
             window.render();
             window.render();
-            if (loads != 4 || attempts != failedAttempts || loadedPath != previousPath ||
+            if (loads != 3 || attempts != failedAttempts || loadedPath != previousPath ||
                 !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
                 throw std::runtime_error("A rejected click must preserve the active ROM and must not retry every frame");
             rejectLoad = false;
-            activateROMEntry(window, 6);
-            if (loads != 5 || loadedPath.filename() != "07##.SG" || loadedType != R2SEGA8::Common::SystemType::SG1000)
+            activateROMEntry(window, 5);
+            if (loads != 4 || loadedPath.filename() != "07##.SG" || loadedType != R2SEGA8::Common::SystemType::SG1000)
                 throw std::runtime_error("A fresh click must recover from errors and preserve filenames containing ##");
-            for (int index : {4, 5})
+            for (int index : {3, 4})
             {
                 window.requestOpen(fixture.parent_path());
                 window.render();
                 const auto before = attempts;
                 activateROMEntry(window, index);
-                if (loads != 5 || attempts != before ||
+                if (loads != 4 || attempts != before ||
                     !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
-                    throw std::runtime_error("BIN/ZIP must report pending support without guessing a system or loading a stale ROM");
+                    throw std::runtime_error("BIN or invalid ZIP must preserve the loaded ROM");
             }
+            const auto beforeUnsupported = attempts;
+            const auto loadedBeforeUnsupported = loadedPath;
+            window.requestOpen(fixture.parent_path() / "02.Sc");
+            window.render();
+            if (attempts != beforeUnsupported || loadedPath != loadedBeforeUnsupported ||
+                !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+                throw std::runtime_error("A direct .sc request must be rejected without replacing the active ROM");
             const auto beforeMissing = attempts;
             window.requestOpen(fixture);
             window.requestOpen(fixture.parent_path() / "missing.sg");
             window.render();
             window.render();
-            if (loads != 5 || attempts != beforeMissing)
+            if (loads != 4 || attempts != beforeMissing)
                 throw std::runtime_error("Missing file must discard an older scheduled load");
             window.requestOpen(fixture);
             window.render();
-            if (loads != 6 || loadedPath != fixture ||
+            if (loads != 5 || loadedPath != fixture ||
                 ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
                 throw std::runtime_error("Direct file requests must also load without confirmation");
             SDL_Event stateFocus{};

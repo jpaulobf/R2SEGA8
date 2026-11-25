@@ -202,6 +202,7 @@ int main(int argc, char **argv)
         bad[30 + std::string("folder/game.sg").size()] ^= 0xff;
         reject(bad);
         reject(archive(raw, false, false, "readme.txt"));
+        reject(archive(raw, false, false, "game.Sc"));
 
         // Deterministic bounded mutation corpus for sanitizer runs; acceptance
         // is allowed only within the documented output limit.
@@ -218,8 +219,7 @@ int main(int argc, char **argv)
                 check(!out.empty() && out.size() <= MaxRomFileSize, "mutation exceeded output limit");
         }
 
-        for (const auto &entry : {std::make_pair("game.sc", SystemType::SC3000),
-                                  std::make_pair("game.sms", SystemType::MasterSystem),
+        for (const auto &entry : {std::make_pair("game.SMS", SystemType::MasterSystem),
                                   std::make_pair("game.gg", SystemType::GameGear)})
         {
             save(dir / "valid.zip", archive(raw, true, false, entry.first));

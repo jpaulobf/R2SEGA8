@@ -369,21 +369,6 @@ int main()
         rejects([&]
                 { Systems::createBoard(SystemType::GameGear, ::R2SEGA8::Tests::loadCartridge(largeSms)); },
                 "Oversized Game Gear ROM accepted");
-        for (auto type : {SystemType::SC3000})
-        {
-            auto other = Systems::createBoard(type, ::R2SEGA8::Tests::loadCartridge(small));
-            check(other->type() == type && other->cartridge().rom().size() == 3, "System factory lost cartridge/type");
-            check(other->ram().size() == (type == SystemType::SC3000 ? 1024u : 8192u), "System RAM allocation");
-            check(!other->hasMemoryMap(), "Unimplemented mapping advertised as available");
-            check(!other->clockFrequency(), "Unimplemented system must not be scheduled");
-            check(!other->consoleProfile(), "Unimplemented systems must not offer a console profile");
-            rejects([&]
-                    { other->runCycles(4); }, "CPU executed without an implemented memory map");
-            rejects([&]
-                    { other->readMemory(0); }, "Unimplemented read silently accepted");
-            rejects([&]
-                    { other->writeMemory(0, 1); }, "Unimplemented write silently accepted");
-        }
         for (const std::size_t offset : {0x1ff0u, 0x3ff0u, 0x7ff0u})
         {
             std::vector<std::uint8_t> headerBytes(offset + 16, 0);
@@ -399,7 +384,7 @@ int main()
                 check(cart.rom() == headerBytes, "Header parsing modified ROM data");
             }
         }
-        for (const auto &pair : {std::make_pair("test.sc", SystemType::SC3000), std::make_pair("test.GG", SystemType::GameGear)})
+        for (const auto &pair : {std::make_pair("test.Sc", SystemType::Unknown), std::make_pair("test.GG", SystemType::GameGear)})
             check(::R2SEGA8::Tests::loadCartridge(fixtures.write(pair.first, {0x42})).suggestedSystem() == pair.second, "Extension hint");
         const auto unicode = fixtures.write(u8"ação teste.sg", {1, 2, 3});
         check(Common::readRomFile(unicode) == std::vector<std::uint8_t>({1, 2, 3}), "Unicode path loading");
