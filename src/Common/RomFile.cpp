@@ -1,4 +1,5 @@
 #include "RomFile.h"
+#include "SystemType.h"
 #include <fstream>
 #include <algorithm>
 #include <cctype>
@@ -32,13 +33,7 @@ namespace R2SEGA8::Common
         bool isRom(const std::string &name)
         {
             const auto dot = name.find_last_of('.');
-            if (dot == std::string::npos)
-                return false;
-            std::string ext = name.substr(dot);
-            std::transform(ext.begin(), ext.end(), ext.begin(),
-                           [](unsigned char c)
-                           { return char(std::tolower(c)); });
-            return ext == ".sg" || ext == ".sc" || ext == ".sms" || ext == ".gg";
+            return dot != std::string::npos && systemFromExtension(name.substr(dot)) != SystemType::Unknown;
         }
     }
 

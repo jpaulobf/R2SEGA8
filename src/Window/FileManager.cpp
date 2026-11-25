@@ -17,6 +17,23 @@
 
 namespace R2SEGA8::Window
 {
+    namespace
+    {
+        std::string normalizedExtension(const std::filesystem::path &path)
+        {
+            auto extension = path.extension().u8string();
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char character)
+                           { return static_cast<char>(std::tolower(character)); });
+            return extension;
+        }
+
+        bool isLoadableExtension(const std::string &extension)
+        {
+            return extension == ".zip" || Common::systemFromExtension(extension) != Common::SystemType::Unknown;
+        }
+    }
+
     FileManager::FileManager(Callbacks::OpenRom openHandler) : openHandler_(std::move(openHandler))
     {
         std::error_code error;
@@ -47,7 +64,8 @@ namespace R2SEGA8::Window
                     recent[i] = std::filesystem::u8path(value);
         }
         for (const auto &path : recent)
-            if (!path.empty() && std::find(recentFiles_.begin(), recentFiles_.end(), path) == recentFiles_.end())
+            if (!path.empty() && isLoadableExtension(normalizedExtension(path)) &&
+                std::find(recentFiles_.begin(), recentFiles_.end(), path) == recentFiles_.end())
                 recentFiles_.push_back(path);
         std::error_code error;
         if (!lastRomDirectory_.empty() && std::filesystem::is_directory(lastRomDirectory_, error))
@@ -111,12 +129,8 @@ namespace R2SEGA8::Window
             {
                 if (!directory)
                 {
-                    auto extension = item.path().extension().u8string();
-                    std::transform(extension.begin(), extension.end(), extension.begin(),
-                                   [](unsigned char character)
-                                   { return static_cast<char>(std::tolower(character)); });
-                    if (extension != ".zip" && extension != ".sg" && extension != ".sc" && extension != ".sms" && extension != ".gg" &&
-                        extension != ".bin")
+                    const auto extension = normalizedExtension(item.path());
+                    if (extension != ".bin" && !isLoadableExtension(extension))
                         continue;
                 }
                 entries.push_back({item.path(), item.path().filename().u8string(), directory});
@@ -137,13 +151,10 @@ namespace R2SEGA8::Window
 
     void FileManager::load(const std::filesystem::path &path)
     {
-        auto extension = path.extension().u8string();
-        std::transform(extension.begin(), extension.end(), extension.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        const auto extension = normalizedExtension(path);
         if (extension == ".bin")
             throw std::runtime_error("Automatic system detection for BIN files is not available yet.");
-        if (extension != ".zip" && Common::systemFromExtension(extension) == Common::SystemType::Unknown)
+        if (!isLoadableExtension(extension))
             throw std::runtime_error("Unsupported ROM extension.");
         if (!openHandler_)
             throw std::runtime_error("ROM loading is unavailable.");
@@ -270,7 +281,7 @@ namespace R2SEGA8::Window
                 return;
             }
         }
-        ImGui::TextUnformatted("Click a ROM to load: .sg, .sc, .sms, .gg, .zip");
+        ImGui::TextUnformatted("Click a ROM to load: .sg, .sms, .gg, .zip");
         drawDriveSelector();
         ImGui::TextWrapped("Path: %s", pathLabel_.c_str());
         if (ImGui::Button("Up"))

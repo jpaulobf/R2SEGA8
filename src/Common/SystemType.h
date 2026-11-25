@@ -5,14 +5,13 @@
 
 namespace R2SEGA8::Common
 {
-    // Identifica as máquinas disponíveis; Unknown indica ausência de identificação.
+    // Os valores dos consoles fazem parte dos nomes dos arquivos de save state.
     enum class SystemType
     {
-        Unknown,
-        SG1000,
-        SC3000,
-        MasterSystem,
-        GameGear
+        Unknown = 0,
+        SG1000 = 1,
+        MasterSystem = 3,
+        GameGear = 4
     };
 
     // Identifica extensões de ROM conhecidas, sem ler arquivos ou inferir cabeçalhos de BIN/ZIP.
@@ -23,8 +22,6 @@ namespace R2SEGA8::Common
                        { return static_cast<char>(std::tolower(c)); });
         if (extension == ".sg")
             return SystemType::SG1000;
-        if (extension == ".sc")
-            return SystemType::SC3000;
         if (extension == ".sms")
             return SystemType::MasterSystem;
         if (extension == ".gg")
@@ -39,8 +36,6 @@ namespace R2SEGA8::Common
         {
         case SystemType::SG1000:
             return "SG-1000";
-        case SystemType::SC3000:
-            return "SC-3000";
         case SystemType::MasterSystem:
             return "Master System";
         case SystemType::GameGear:

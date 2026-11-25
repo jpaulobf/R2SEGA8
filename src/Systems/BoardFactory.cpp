@@ -1,6 +1,5 @@
 #include "BoardFactory.h"
 #include "Core/Systems/SG1000/SG1000.h"
-#include "Core/Systems/SC3000/SC3000.h"
 #include "Core/Systems/MasterSystem/MasterSystem.h"
 #include "Core/Systems/GameGear/GameGear.h"
 #include <stdexcept>
@@ -17,8 +16,6 @@ namespace R2SEGA8::Systems
         {
         case SystemType::SG1000:
             return std::make_unique<Core::SG1000>(std::move(cartridge));
-        case SystemType::SC3000:
-            return std::make_unique<Core::SC3000>(std::move(cartridge));
         case SystemType::MasterSystem:
         {
             auto name = cartridge.path().filename().u8string();
