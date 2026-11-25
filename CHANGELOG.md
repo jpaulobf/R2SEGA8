@@ -2,6 +2,11 @@
 
 Todas as mudanças notáveis do R2SEGA8 são documentadas aqui.
 
+## Em desenvolvimento
+
+- A lista de consoles passa a incluir SG-1000, Master System e Game Gear.
+  SC-3000 foi removido do seletor e do carregamento de ROMs, incluindo ZIP.
+
 ## v0.4.0
 
 - Shaders experimentais no Windows: Gauss Scanlines, HQ2, CRT, CRT 3D e
