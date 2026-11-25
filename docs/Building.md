@@ -126,12 +126,45 @@ eventos reconhece o VBlank e evita que o mesmo evento acione INT. Uma ROM
 sintética verifica os dois caminhos, inclusive ao restaurar o estado salvo
 entre o latch e a IRQ.
 
-O teste 46 espera colisão totalmente fora da área vertical ativa. O próprio
-[autor da ROM](https://github.com/FluBBaOfWard/SmsVdpTest) relata essa
-ocorrência, mas há [relatos de testes em hardware](https://www.smspower.org/forums/13407-SmsSpriteCollisionCalculation)
-com resultado contrário. O perfil atual preserva a ausência de colisão fora
-da área ativa até que o modelo de VDP e as condições sejam conciliados; a falha
-da ROM continua visível e não é considerada aprovação.
+### Investigação do caso 46
+
+O teste 46 coloca dois sprites no Y bruto `$F0`, marca o fim da tabela de
+atributos dos sprites (SAT) com `$D0` e envia 256 bytes ao VDP. A rotina só
+reescreve os atributos dos dois primeiros sprites. Ela também reativa a tela
+em `R1`, lê `$BF` para limpar os flags e aguarda o contador vertical passar
+por `$11` e depois `$10` antes de ler o resultado.
+
+Nos [experimentos em hardware de JoppyFurr e enik2](https://www.smspower.org/forums/19415-OffScreenSpriteCollisionDetectionBehaviour),
+o simples movimento de sprites pela borda no SMS PAL deixou `COL` zerado.
+Já o caso 46 foi sensível aos bytes `SAT+$84` e `SAT+$89`, herdados da sequência
+anterior, e ao momento em que a tela era habilitada. Uma
+[captura do barramento de um Game Gear VA5](https://www.smspower.org/forums/10695-SMSVDPTester?start=50)
+identificou leituras de refresco da SAT durante o apagamento em Mode 4. É uma
+pista para a origem dos dados que chegam ao circuito de colisão. A captura
+ainda não determina como esses dados acionam `COL` no Master System.
+
+Para observar a sequência exata no emulador, use a ROM identificada acima.
+
+```powershell
+build/sms_vdp_diagnostic.exe build/sms-vdp-test-source/VDPTest.sms --trace-46
+```
+
+No perfil NTSC, a tela é reativada na linha 168, dot 0, com `SAT+$84=$70`
+e `SAT+$89=$41`. A leitura de limpeza devolve `$00` no dot 37 da mesma linha.
+A leitura final ocorre na linha 16 do quadro seguinte e devolve `$80`
+(VBlank com `COL` zerado). As posições do trace são registradas ao final do
+T-state emulado.
+
+Em uma compilação experimental, estender a detecção normal de colisão do
+Mode 4 às linhas fora da área ativa acionou `COL` na linha 243, dot 138. O
+diagnóstico externo registrou 55 aprovados. O teste de controle do núcleo
+também passou a sinalizar colisão entre sprites inteiramente fora da área
+ativa com a tela já ligada, em desacordo com as observações em hardware.
+O núcleo mantém a detecção atual e o CTest continua registrando a falha 46.
+
+Para isolar o mecanismo em hardware, o experimento é medir o bit `$20` de
+`$BF` após habilitar a tela, variando apenas um byte da SAT por execução e
+depois variando a fase da escrita em `R1`, com a revisão do VDP identificada.
 
 O estado do Master System agora é gravado na versão 2 para preservar a porta
 de controle e o valor capturado do HCounter. Estados de versão 1 continuam

@@ -1,6 +1,6 @@
 # Arquitetura do R2SEGA8
 
-Alvos: SG-1000, SC-3000, Master System e Game Gear. A primeira entrega permite
+Alvos: SG-1000, Master System e Game Gear. A primeira entrega permite
 abrir ROMs em uma interface SDL3 / Dear ImGui. O Z80 NMOS já
 executa por T-state no perfil inicial do SG-1000, junto do TMS9918 com
 os backgrounds Graphics I/II, Text e Multicolor, sprites, arbitragem da VRAM e buscas de background por dot, além da interrupção de VBlank.
@@ -85,9 +85,9 @@ flowchart LR
 
 O seletor navega nas pastas e carrega imediatamente a ROM clicada, passando
 caminho e sistema da extensão ao callback `openRom`. Não há prévia, confirmação
-ou seleção manual de sistema. Extensões SG/SC/SMS/GG são identificadas por uma
-função comum, sem ler os bytes do cartucho na interface. ZIP e BIN continuam
-listados, mas mostram uma mensagem de suporte pendente ao serem escolhidos.
+ou seleção manual de sistema. Uma função comum reconhece as extensões `.sg`,
+`.sms` e `.gg` em arquivos avulsos e nas entradas de ZIP. O seletor exibe uma
+mensagem de suporte pendente para arquivos `.bin`.
 Exceções mantêm o diálogo aberto; a Engine preserva a placa anterior se a
 construção da nova máquina falhar. Pedidos de arquivo por drag-and-drop são
 consumidos uma única vez no desenho, depois de copiar o quadro anterior.
@@ -108,16 +108,14 @@ somente a biblioteca de interface; seus cenários não precisam do núcleo.
 
 ## Carregamento e memória nesta entrega
 
-1. `Common::readRomFile` lê uma imagem bruta, rejeitando arquivos vazios,
-   diretórios, falhas de leitura, ZIP e imagens acima do limite de alocação de 16 MiB.
+1. `Common::readRomFile` lê uma imagem bruta ou extrai a primeira ROM de um ZIP
+   com extensão reconhecida. O limite da imagem é de 16 MiB.
 2. `Core::Cartridge` conserva os bytes originais e o caminho do arquivo. Extensão
    e cabeçalho Sega fornecem sugestões; não certificam compatibilidade.
-3. `Window::FileManager` usa a extensão para escolher o sistema e chama o
-   callback assim que o usuário clica. A sugestão pelo cabeçalho do cartucho
-   não substitui a extensão neste fluxo; detecção de BIN e conteúdo ZIP fica
-   para uma etapa futura.
-4. A `Engine` lê o cartucho uma vez e chama `Systems::createBoard` para
-   construir a placa específica com CPU, cartucho e RAM.
+3. `Window::FileManager` usa a extensão da ROM para escolher o sistema, cria
+   o cartucho com a imagem já lida e o entrega pelo callback.
+4. A `Engine` chama `Systems::createBoard` para construir a placa específica
+   com CPU, cartucho e RAM.
    A máquina ativa só é substituída depois que a construção termina com sucesso.
 
 O tamanho do arquivo não define o tamanho do espaço de endereçamento da CPU.
@@ -127,9 +125,8 @@ janelas que ficam acessíveis à CPU.
 | Sistema | RAM interna alocada | Mapeamento nesta entrega |
 | --- | --- | --- |
 | SG-1000 | 1 KiB | ROM simples de até 48 KiB ou perfil The Castle com 8 KiB de RAM no cartucho. |
-| SC-3000 | 1 KiB | Pendente; não inclui RAM de cartuchos BASIC ou expansões. |
-| Master System | 8 KiB | Pendente; ROM e RAM disponíveis apenas para inspeção. |
-| Game Gear | 8 KiB | Pendente; ROM e RAM disponíveis apenas para inspeção. |
+| Master System | 8 KiB | Mapeador Sega com troca de bancos e RAM de cartucho. |
+| Game Gear | 8 KiB | Mapeador Sega com troca de bancos e RAM de cartucho. |
 
 No perfil inicial do SG-1000, `0000–BFFF` lê a ROM nos mesmos offsets do
 arquivo e `C000–FFFF` acessa a RAM com espelhamento a cada 1 KiB. Escritas na

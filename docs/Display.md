@@ -11,7 +11,7 @@ foram preservados em `Window::MemoryInspector` para futuras janelas de Debug.
 Auto usa PAL para nomes de ROM iniciados por `(Europe` ou `(Australia` na
 indicação regional e NTSC nos demais casos. Trocar o perfil com um jogo de
 Master System carregado reinicia a máquina. O menu fica desabilitado com
-SG-1000, SC-3000 ou Game Gear carregado; sem ROM, permite escolher a preferência.
+SG-1000 ou Game Gear carregado. Sem ROM, o menu permite escolher a preferência.
 
 ## VSync e avanço rápido
 
