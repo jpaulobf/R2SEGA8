@@ -28,6 +28,8 @@ namespace R2SEGA8::Window
             ImGui::Separator();
             if (ImGui::MenuItem("VSync", nullptr, &settings.vsync, configurable))
                 context.callbacks.setExecutionSettings(settings);
+            if (ImGui::MenuItem("Integer Scaling", nullptr, &settings.integerScaling, configurable))
+                context.callbacks.setExecutionSettings(settings);
             ImGui::Separator();
             for (unsigned scale = 1; scale <= 5; ++scale)
             {
