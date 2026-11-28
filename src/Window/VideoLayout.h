@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 
 namespace R2Window
 {
@@ -10,14 +11,20 @@ namespace R2Window
     };
 
     // Calcula a área relativa ao canto superior esquerdo disponível.
-    inline VideoRect videoLayout(float width, float height, float sourceWidth, float sourceHeight, bool stretched)
+    inline VideoRect videoLayout(float width, float height, float sourceWidth, float sourceHeight, bool stretched,
+                                 bool integerScaling = false)
     {
         if (width <= 0 || height <= 0 || sourceWidth <= 0 || sourceHeight <= 0)
             return {0, 0, 0, 0};
-        const float scale = std::min(width / sourceWidth, height / sourceHeight);
+        float scale = std::min(width / sourceWidth, height / sourceHeight);
+        const bool integer = integerScaling && !stretched && scale >= 1;
+        if (integer)
+            scale = std::floor(scale);
         const float w = stretched ? width : sourceWidth * scale;
         const float h = stretched ? height : sourceHeight * scale;
-        return {(width - w) * 0.5f, (height - h) * 0.5f, w, h};
+        const float x = (width - w) * 0.5f;
+        const float y = (height - h) * 0.5f;
+        return {integer ? std::floor(x) : x, integer ? std::floor(y) : y, w, h};
     }
 
     // O renderer SDL do NES utiliza coordenadas inteiras e trunca as dimensões.

@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <stdexcept>
@@ -34,11 +35,15 @@ namespace R2SEGA8::Systems
         }
 
         // Consome o quadro devido. Uma espera longa reinicia a agenda no instante atual.
-        bool takeFrame(Clock::time_point now)
+        bool takeFrame(Clock::time_point now, std::chrono::nanoseconds displayLead = {})
         {
             if (now < deadline_)
-                return false;
-            if (now - deadline_ > std::chrono::milliseconds(250))
+            {
+                const auto halfFrame = std::chrono::nanoseconds(cycles_ * 1000000000ull / frequency_ / 2);
+                if (deadline_ - now > std::min(displayLead, halfFrame))
+                    return false;
+            }
+            else if (now - deadline_ > std::chrono::milliseconds(250))
                 reset(frequency_, cycles_, now);
             advance();
             return true;

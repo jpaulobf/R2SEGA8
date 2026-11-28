@@ -86,9 +86,17 @@ namespace R2SEGA8::Window
         if (!SDL_UpdateTexture(videoTexture, nullptr, pixels, pitch))
             throw std::runtime_error(SDL_GetError());
         const auto available = ImGui::GetContentRegionAvail();
-        const auto layout = R2Window::videoLayout(available.x, available.y, static_cast<float>(visibleWidth),
-                                                  static_cast<float>(nativeSize.height), fullscreen == FullscreenMode::Stretched);
-        const ImVec2 size(layout.width, layout.height);
+        const auto framebufferScale = ImGui::GetIO().DisplayFramebufferScale;
+        const bool stretched = fullscreen == FullscreenMode::Stretched;
+        const bool integerScaling = settings.integerScaling && !stretched;
+        // Mede em pixels físicos para que a escala permaneça inteira em telas de alta densidade.
+        const float availableWidth = available.x * framebufferScale.x;
+        const float availableHeight = available.y * framebufferScale.y;
+        const auto layout = R2Window::videoLayout(integerScaling ? std::round(availableWidth) : availableWidth,
+                                                  integerScaling ? std::round(availableHeight) : availableHeight,
+                                                  static_cast<float>(visibleWidth), static_cast<float>(nativeSize.height),
+                                                  stretched, integerScaling);
+        const ImVec2 size(layout.width / framebufferScale.x, layout.height / framebufferScale.y);
         if (size.x > 0 && size.y > 0)
         {
             SDL_Texture *displayTexture = videoTexture;
@@ -166,10 +174,14 @@ namespace R2SEGA8::Window
             }
             // Centraliza o vídeo e mantém as barras livres quando a janela maximizada tem outra proporção.
             const auto position = ImGui::GetCursorScreenPos();
-            ImGui::SetCursorScreenPos(ImVec2(position.x + layout.x, position.y + layout.y));
+            const auto offset = ImGui::GetMainViewport()->Pos;
+            const float x = (position.x - offset.x) * framebufferScale.x;
+            const float y = (position.y - offset.y) * framebufferScale.y;
+            const auto origin = ImVec2(offset.x + ((integerScaling ? std::round(x) : x) + layout.x) / framebufferScale.x,
+                                       offset.y + ((integerScaling ? std::round(y) : y) + layout.y) / framebufferScale.y);
+            ImGui::SetCursorScreenPos(origin);
             if (callbacks.lightPhaser)
             {
-                const auto origin = ImGui::GetCursorScreenPos();
                 const auto mouse = ImGui::GetIO().MousePos;
                 const bool inside = pointerAvailable && mouse.x >= origin.x && mouse.y >= origin.y &&
                                     mouse.x < origin.x + size.x && mouse.y < origin.y + size.y;
@@ -179,9 +191,7 @@ namespace R2SEGA8::Window
             }
             if (pixelArt && !useShader)
             {
-                const auto origin = ImGui::GetCursorScreenPos();
-                const auto viewport = ImGui::GetMainViewport()->Pos;
-                PixelArtDraw draw{renderer, videoTexture, {origin.x - viewport.x, origin.y - viewport.y, size.x, size.y}};
+                PixelArtDraw draw{renderer, videoTexture, {origin.x - offset.x, origin.y - offset.y, size.x, size.y}};
                 ImGui::GetWindowDrawList()->AddCallback(drawPixelArt, &draw, sizeof(draw));
                 ImGui::Dummy(size);
             }
