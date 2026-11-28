@@ -40,8 +40,11 @@ console profile used when saving. Rewind is available for all three systems.
 ## Display
 
 Starts at **3X**. Choose **1X–5X** in **Display**, or press **Ctrl+1–5**.
-The video fills the available area while keeping its aspect ratio.
-Maximizing is allowed; manual resizing is blocked.
+**Display > Integer Scaling** is enabled by default. It keeps each game pixel
+the same size when the window is maximized or in aspect-ratio fullscreen.
+Turn it off to fill more of the available area with fractional scaling.
+**Fullscreen Stretched** always fills the screen.
+Maximizing is allowed. Manual resizing is blocked.
 
 **Display > Console Profile** selects Auto, NTSC or PAL for Master System. Auto
 uses PAL for ROM filenames tagged Europe or Australia and NTSC otherwise.
