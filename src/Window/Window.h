@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Callbacks.h"
+#include <chrono>
 #include <memory>
 
 namespace R2SEGA8::Window
@@ -47,6 +48,9 @@ namespace R2SEGA8::Window
         // Exige uma sessão inicializada e mantém a configuração anterior quando a SDL rejeita a troca.
         bool setVSync(bool enabled);
 
+        // Intervalo nominal entre atualizações do monitor. Zero indica taxa desconhecida.
+        std::chrono::nanoseconds refreshPeriod() const;
+
         // Informa se a apresentação está suspensa; permite ao chamador evitar um loop sem espera ao minimizar.
         bool isMinimized() const;
 
@@ -54,6 +58,6 @@ namespace R2SEGA8::Window
         // Oculta os tipos nativos e centraliza o estado e a liberação dos recursos.
         struct Impl;
         std::unique_ptr<Impl> impl_;
-        static constexpr const char *emuName = "R2SEGA8 v.0.6.0";
+        static constexpr const char *emuName = "R2SEGA8 v.0.6.1";
     };
 }

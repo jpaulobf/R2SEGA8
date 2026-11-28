@@ -57,9 +57,19 @@ namespace R2SEGA8::Window
         float menuHeight = 0;
         bool maximized = false;
         bool vsync = false;
+        std::chrono::nanoseconds refreshPeriod{};
         bool reportedMenuPause = false;
         std::string romName;
         std::string title;
+
+        void updateRefreshPeriod()
+        {
+            const auto *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+            const double rate = mode ? mode->refresh_rate : 0;
+            refreshPeriod = std::isfinite(rate) && rate >= 1
+                                ? std::chrono::nanoseconds(static_cast<std::int64_t>(SDL_NS_PER_SECOND / rate))
+                                : std::chrono::nanoseconds{};
+        }
 
         unsigned displayWidth() const
         {
@@ -126,6 +136,7 @@ namespace R2SEGA8::Window
             if (!ok)
                 throw std::runtime_error(SDL_GetError());
             fullscreen = mode;
+            updateRefreshPeriod();
             if (callbacks.displayTransitionCompleted)
                 callbacks.displayTransitionCompleted();
             if (mode == Fullscreen::None)
@@ -276,6 +287,7 @@ namespace R2SEGA8::Window
                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (!state.window)
             throw std::runtime_error(SDL_GetError());
+        state.updateRefreshPeriod();
 #ifdef _WIN32
         state.nativeWindow =
             static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(state.window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
@@ -341,6 +353,11 @@ namespace R2SEGA8::Window
         return true;
     }
 
+    std::chrono::nanoseconds Window::refreshPeriod() const
+    {
+        return impl_->refreshPeriod;
+    }
+
     bool Window::isMinimized() const
     {
         const auto &state = *impl_;
@@ -366,6 +383,8 @@ namespace R2SEGA8::Window
             const bool keyEvent = event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP;
             const bool ownEvent =
                 (!windowEvent || event.window.windowID == ownID) && (!keyEvent || event.key.windowID == 0 || event.key.windowID == ownID);
+            if (event.type == SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED || (ownEvent && event.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED))
+                state.updateRefreshPeriod();
             if (ownEvent)
             {
                 if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
@@ -675,9 +694,11 @@ namespace R2SEGA8::Window
             if (ImGui::BeginPopupModal("About R2SEGA8", &aboutVisible, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
             {
                 ImGui::TextUnformatted("Software livre e aberto para a comunidade.");
-                ImGui::TextUnformatted("Ver licen\xC3\xA7" "a de uso.");
+                ImGui::TextUnformatted("Ver licen\xC3\xA7"
+                                       "a de uso.");
                 ImGui::Spacing();
-                ImGui::TextUnformatted("Vers\xC3\xA3" "o: " R2_APP_VERSION " - Data: 23/11/2026");
+                ImGui::TextUnformatted("Vers\xC3\xA3"
+                                       "o: " R2_APP_VERSION " - Data: 23/11/2026");
                 ImGui::EndPopup();
             }
             if (state.callbacks.frame)
