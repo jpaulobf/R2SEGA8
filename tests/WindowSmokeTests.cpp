@@ -150,11 +150,11 @@ namespace
             window.render();
             const auto bounds = videoBounds(8, 8);
             const float availableHeight = size.y - ImGui::GetFrameHeight();
-            const float scale = std::min(size.x / 256.0f, availableHeight / 192.0f);
+            const float scale = std::floor(std::min(size.x / 256.0f, availableHeight / 192.0f));
             if (std::abs(bounds.GetWidth() - 256 * scale) > 1 || std::abs(bounds.GetHeight() - 192 * scale) > 1 ||
                 std::abs(bounds.Min.x - (size.x - bounds.GetWidth()) * 0.5f) > 1 ||
                 std::abs(bounds.Min.y - (ImGui::GetFrameHeight() + (availableHeight - bounds.GetHeight()) * 0.5f)) > 1)
-                throw std::runtime_error("Maximized video must fill the available area and preserve centered 4:3 aspect");
+                throw std::runtime_error("Maximized video must use the largest centered integer scale");
         }
         maximized.type = SDL_EVENT_WINDOW_RESTORED;
         SDL_PushEvent(&maximized);
@@ -233,7 +233,8 @@ namespace
             throw std::runtime_error("Ctrl+F must enter fullscreen");
         const auto bounds = videoBounds(8, 8);
         const auto *viewport = ImGui::GetMainViewport();
-        const float scale = std::min(viewport->Size.x / 256.0f, viewport->Size.y / 192.0f);
+        const float fit = std::min(viewport->Size.x / 256.0f, viewport->Size.y / 192.0f);
+        const float scale = fit >= 1 ? std::floor(fit) : fit;
         if (std::abs(bounds.GetWidth() - 256 * scale) > 1 || std::abs(bounds.GetHeight() - 192 * scale) > 1)
             throw std::runtime_error("Ctrl+F must preserve the video aspect ratio");
         shortcut.key.repeat = true;
@@ -249,6 +250,7 @@ namespace
         if (SDL_GetWindowFlags(native) & SDL_WINDOW_FULLSCREEN)
             throw std::runtime_error("Ctrl+F must leave fullscreen");
         checkScale(native, 3);
+        menuOption(window, "Display", "Integer Scaling");
         for (const bool stretched : {true, false})
         {
             menuOption(window, "Display", stretched ? "Fullscreen Stretched" : "Fullscreen");
@@ -281,6 +283,7 @@ namespace
                 throw std::runtime_error("Escape must leave fullscreen");
             checkScale(native, 3);
         }
+        menuOption(window, "Display", "Integer Scaling");
     }
 
     // Menus publicam preferências por callback; a aplicação suspende VSync sem apagar a escolha do usuário.
@@ -292,12 +295,13 @@ namespace
         const bool initialVSync = settings.vsync;
         if (!renderer || !SDL_GetRenderVSync(renderer, &vsync) || vsync != 0 || !settings.fastForwardEnabled)
             throw std::runtime_error("Window must start without renderer VSync and expose fast-forward availability");
+        const unsigned previousChanges = changes;
         menuOption(window, "Display", "VSync");
-        if (settings.vsync == initialVSync || !settings.fastForwardEnabled || changes != 1 ||
+        if (settings.vsync == initialVSync || !settings.fastForwardEnabled || changes != previousChanges + 1 ||
             !SDL_GetRenderVSync(renderer, &vsync) || vsync != 0)
             throw std::runtime_error("Display VSync must publish the preference through the callback");
         menuOption(window, "Display", "VSync");
-        unsigned expectedChanges = 2;
+        unsigned expectedChanges = previousChanges + 2;
         if (settings.vsync != initialVSync || changes != expectedChanges)
             throw std::runtime_error("Display VSync must toggle back through the callback");
         if (!settings.renderSprites || !settings.renderTiles)
@@ -853,7 +857,7 @@ int main()
             window.render();
             const auto croppedBounds = videoBounds(8, 4);
             const auto *viewport = ImGui::GetMainViewport();
-            const float croppedScale = std::min(viewport->Size.x / 248.0f, viewport->Size.y / 192.0f);
+            const float croppedScale = std::floor(std::min(viewport->Size.x / 248.0f, viewport->Size.y / 192.0f));
             if (std::abs(croppedBounds.GetWidth() - 248 * croppedScale) > 1 ||
                 std::abs(croppedBounds.Min.x - (viewport->Pos.x + (viewport->Size.x - croppedBounds.GetWidth()) / 2)) > 1 ||
                 std::abs(croppedBounds.Min.y - (viewport->Pos.y + (viewport->Size.y - croppedBounds.GetHeight()) / 2)) > 1)

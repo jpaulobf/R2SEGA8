@@ -42,6 +42,28 @@ namespace
         else
             check(batched, "A slower display must sometimes emulate several frames per presentation");
     }
+
+    void checkVSyncJitter(unsigned frequency, unsigned cycles, unsigned refresh)
+    {
+        using namespace std::chrono;
+        const auto start = FramePacer::Clock::time_point{};
+        const auto lead = nanoseconds(1000000000ull / refresh / 2);
+        FramePacer pacer;
+        pacer.reset(frequency, cycles, start + milliseconds(1));
+        std::uint64_t frames = 0;
+        for (std::uint64_t refreshIndex = 0; refreshIndex <= 60 * refresh; ++refreshIndex)
+        {
+            const auto elapsed = nanoseconds(refreshIndex * 1000000000ull / refresh);
+            const auto now = start + duration_cast<FramePacer::Clock::duration>(
+                                         elapsed + milliseconds(refreshIndex % 2 ? 0 : 2));
+            if (pacer.takeFrame(now, lead))
+            {
+                ++frames;
+                check(!pacer.takeFrame(now), "VSync jitter must not cause catch-up frames at the matching refresh rate");
+            }
+        }
+        check(frames == 1 + 60ull * frequency / cycles, "VSync lead must preserve native emulation speed");
+    }
 }
 
 int main()
@@ -79,6 +101,8 @@ int main()
             checkPresentationCadence(frequency, cycles, refresh);
             checkPresentationCadence(3546893, palCycles, refresh);
         }
+        checkVSyncJitter(frequency, cycles, 60);
+        checkVSyncJitter(3546893, palCycles, 50);
         pacer.reset(60, 1, start);
         check(pacer.takeFrame(start), "First frame must be due immediately after reset");
         check(!pacer.takeFrame(start), "Taking a frame must advance its deadline");

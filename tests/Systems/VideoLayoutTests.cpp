@@ -17,6 +17,12 @@ int main()
     check(stretched.x == 0 && stretched.y == 0 && stretched.width == 1920 && stretched.height == 1080);
     const auto tall = R2Window::videoLayout(900, 1200, 160, 144, false);
     check(tall.x == 0 && std::abs(tall.y - 195) < 0.01f && tall.width == 900 && tall.height == 810);
+    const auto integer = R2Window::videoLayout(1921, 1081, 256, 192, false, true);
+    check(integer.x == 320 && integer.y == 60 && integer.width == 1280 && integer.height == 960);
+    const auto portable = R2Window::videoLayout(1280, 720, 160, 144, false, true);
+    check(portable.x == 240 && portable.y == 0 && portable.width == 800 && portable.height == 720);
+    const auto small = R2Window::videoLayout(128, 120, 256, 192, false, true);
+    check(small.x == 0 && small.y == 12 && small.width == 128 && small.height == 96);
     const auto nes = R2Window::videoLayoutInteger(1920, 1080, 8.0 / 7.0, false);
     check(nes.x == 343 && nes.y == 0 && nes.width == 1234 && nes.height == 1080);
     const auto cropped = R2Window::videoLayoutInteger(1920, 1080, 60.0 / 49.0, false);
