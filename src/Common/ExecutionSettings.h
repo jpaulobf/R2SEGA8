@@ -15,6 +15,7 @@ namespace R2SEGA8::Common
     {
         ConsoleProfile consoleProfile = ConsoleProfile::Auto;
         bool vsync = true;
+        bool integerScaling = true;
         bool bilinearFilterEnabled = false;
         bool pixelArtEnabled = false;
         bool scanlinesEnabled = false;

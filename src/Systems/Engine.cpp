@@ -429,7 +429,11 @@ int R2SEGA8::Systems::Engine::run()
                 const bool fast = loopMode == LoopMode::FastForward;
                 const unsigned framesPerBatch = fast ? 8 : 4;
                 const auto now = Clock::now();
-                for (unsigned frame = 0; frame < framesPerBatch && (fast || pacer.takeFrame(now)); ++frame)
+                const auto displayLead = loopMode == LoopMode::VSync ? window.refreshPeriod() / 2 : std::chrono::nanoseconds{};
+                // A margem do VSync vale só para o primeiro quadro. Quadros de recuperação precisam estar vencidos.
+                for (unsigned frame = 0; frame < framesPerBatch &&
+                                         (fast || pacer.takeFrame(now, frame == 0 ? displayLead : std::chrono::nanoseconds{}));
+                     ++frame)
                 {
                     if (frame && fast)
                     {
